@@ -1,0 +1,966 @@
+# Ordo Kairos — Pre-Registered Protocol
+
+Written **before** Stage 0 runs. Changing anything here after seeing a result is a new trial and
+must be recorded in [`CORRECTIONS.md`](CORRECTIONS.md) with a reason. Governed by
+[`AXIOMS.md`](AXIOMS.md); evidence in [`EVIDENCE.md`](EVIDENCE.md).
+
+Registered 2026-09-08.
+
+---
+
+## 0. Pre-registered decisions (frozen)
+
+| Decision | Value | Axiom |
+|---|---|---|
+| Primary scoring rule | **Log score** | C1 |
+| Primary hypothesis | `E[logscore(p, y) − logscore(q_ref, y)] > 0` | C1, B1 |
+| Primary inference | Paired score differences, block/cluster bootstrap at the event level; wild-cluster bootstrap when clusters are few | C4 |
+| Secondary diagnostics | Brier + calibration/refinement decomposition, reliability, DSR | C1 |
+| ROI | Reported, never selected on | C2 |
+| Null action | Abstain | A1 |
+| Null decision | Kill | A1 |
+| Final holdout | Sealed; queried **once**, after everything is frozen | C6 |
+| Materiality floor | `MIN_RELATIVE_GAIN = 0.01` of the benchmark, **and** significance | C1 |
+| Re-testing a hypothesis on more data | Alpha-spending registered **before** the run — see below | C5, A8 |
+
+### Re-tests are second looks, and must be registered as such
+
+Gates 1 and 2a are **look #1** on the hypothesis "something beats the raw market price." They
+returned `+0.0134` at `p=0.114` and `+0.0119` at `p=0.117` — the shape that most tempts a re-test on
+more data. Re-running the same test on a superset of the same markets at nominal `alpha` is **look
+#2 reported as if it were the first**, and inflates the false-positive rate by construction.
+Alpha-spending controls this even when the number and timing of looks was never fixed in advance
+(DeMets & Lan 1994; Lakens et al. 2021), so the absence of an original schedule is not an excuse.
+
+**Binding rules for any re-test:**
+
+1. The spending schedule is written into this file **before** the data is assembled, not after.
+2. The observed effect from look #1 is an **upper bound** on the true effect, never the planning
+   value. It is the maximum of 5 baselines (Gate 1) or 4 forecasters (Gate 2a), so it carries a
+   selection filter; at the power these gates ran at, selected estimates are substantially inflated
+   (Jaksic et al. 2026). A sample size derived from `+0.012` is optimistic and must be stated as
+   such.
+3. The materiality floor applies unchanged. Significance without materiality is not a finding — that
+   is what Gate 1 established when `B_settle` won at `p=0.0005` on 0.02% of the benchmark.
+
+---
+
+## Look 2 — Replication on disjoint events
+
+> **REGISTERED 2026-09-08, before any new data was fetched.** Everything below was frozen while the
+> only data on disk was look #1's 20 cached pages. Run with `python replicate.py`.
+>
+> **STATUS: RUN 2026-09-08 — WITHHELD.** 115 fresh events against a registered requirement of 700.
+> The cause is an apparatus ceiling, not a shortage of markets: Gamma refuses `offset` past 2100 for
+> every ordering. Superseded by Look 3. See [`LOOK2-RESULTS.md`](LOOK2-RESULTS.md).
+
+### Why this is a replication and not an alpha-spent second look
+
+The natural instinct is a group-sequential design: treat look #1 as an interim analysis at
+information fraction `t₁ = 731/N` and spend the remaining alpha at look #2. **That is not available
+here, and claiming it would be the exact post-hoc move A8 forbids.** Look #1 was conducted at the
+full nominal `alpha = 0.05` with no registered boundary. A spending function assigns alpha to looks
+*in advance*; retrofitting an O'Brien–Fleming boundary — which happens to spend almost nothing early
+and would therefore leave nearly all of the 0.05 available now — is choosing the schedule after
+seeing that the first look failed. There is no honest schedule that leaves look #2 anything, because
+look #1 already had permission to reject at 0.05 and did not.
+
+So the accumulating-data framing is abandoned. **Look #2 tests on events that were not in look #1
+at all.** A test on disjoint data is a genuine independent replication: no alpha is shared, none
+needs to be spent, and the full `alpha = 0.05` is available because this is the first time these
+observations have ever been tested.
+
+### Frozen design
+
+| Decision | Value | Why this and not otherwise |
+|---|---|---|
+| **Lead time** | `lead_hours = 24`, **identical to look #1** | 72 h yields ~12% more events, but changing it makes look #2 a *different experiment* rather than a replication, and destroys the ability to say the look-#1 effect did or did not reproduce. Horizon variation is a separate future experiment and is **not** folded into this one |
+| **Row cap** | none (`--limit` removed) | The cap was an argument default that discarded ~12% of available events (Correction 8.1) |
+| **Pagination** | `--pages 60` (40 pages deeper than look #1) | Fixed **now**, before seeing any yield. Pages are ordered newest-first, so the new pages are older markets |
+| **Test set** | **only** events whose `cluster_id` is absent from look #1's 731 | Enforced in code by set difference against a recomputed look-#1 event set, not by assumption |
+| **Look #1 events** | excluded entirely — not test data, not training data | They are temporally *newer* than the fresh set, so using them to train a model tested on older events would leak the future |
+| **Splits** | rolling temporal splits and a sealed holdout **internal to the fresh set**, same construction as look #1 | Fresh set is self-contained; sealed holdout queried once (C6) |
+| **alpha** | 0.05 one-sided, split Bonferroni across 2 pre-specified tests → **0.025 each** | Two look-#1 near-misses are carried forward; testing both at 0.05 doubles the error rate |
+| **Materiality** | `MIN_RELATIVE_GAIN = 0.01` of benchmark, unchanged | C1 |
+| **Benchmark** | raw market price `q` | Gate 1 rejected `q_ref` |
+
+### The two pre-specified tests, named before the run
+
+1. **H1 — `C_logit`.** Logistic recalibration of the market price in logit space, cross-fitted.
+   Look #1: `+0.01341`, `p = 0.1139`.
+2. **H2 — `drift`.** The `drift_per_day` price-path forecaster, train-only standardised.
+   Look #1: `+0.01193`, `p = 0.1174`.
+
+**No other model is tested.** The full Gate-1 baseline family and the full Gate-2a ladder are *not*
+re-run as tests — running 5 + 4 models and reporting the best is the search that made look #1's
+effect an upper bound in the first place. Others may be reported as descriptive context, explicitly
+labelled non-inferential.
+
+### Pre-committed expectation about magnitude
+
+Look #1's `+0.012` to `+0.013` is the **maximum of 5 baselines and of 4 forecasters** respectively,
+measured at low power. Selected estimates under those conditions are substantially inflated
+(Jaksic et al. 2026; Gelman & Carlin 2014), so **the replication is expected to show a smaller
+effect than look #1, and a smaller effect is not evidence that the method failed.** It is evidence
+about magnitude. This is recorded now so it cannot be offered as an excuse afterwards.
+
+### Stopping rule for data collection — binding
+
+Fetch to `--pages 60` and stop. **Do not fetch further because the result was not significant.**
+If the fresh set yields fewer than **700 independent events**, the shortfall is reported with an
+explicit power statement and the run proceeds anyway; under A1 that is *"not enough evidence"*, never
+*"no effect"*. Continuing to collect until a p-value cooperates is optional stopping by another name.
+
+### Decision rule — written before the numbers
+
+| Outcome | Action |
+|---|---|
+| Either test significant at 0.025 **and** material | That hypothesis proceeds to Gate 3 (execution realism). The other does not, whatever it scored |
+| Both fail, fresh events ≥ 700 | **Class A forecasting edge is rejected at this venue and scale.** ~~`baseline.py` is deleted rather than disabled.~~ **See the amendment below.** No further model work on Polymarket resolved markets |
+| Both fail, fresh events < 700 | Underpowered. Verdict withheld. The honest next move is a different venue or a forward paper test, **not** another re-test of the same universe |
+
+### Amendment 2026-09-08 — "delete `baseline.py`" replaced, and why
+
+The decision rule above committed to deleting `baseline.py`. **That clause used a *file* as a proxy
+for a *hypothesis*, and the two do not coincide.** Verified before acting:
+
+| component in `baseline.py` | status | live consumer |
+|---|---|---|
+| `LogitRecalibration` | **REJECTED** — it *is* `C_logit` | `gate1._fit_logit`, reached by `replicate.py` |
+| `MarketBaseline` | rejected at Gate 1 (`D_both`) | `gate1._fit_both`, `demo.py` |
+| `SettlementTerms` | **ALIVE** | **`census.py` — the Class B carry model**, where it reverses the sign on every long-dated negRisk group |
+
+Deleting the file would therefore have (a) removed a working component of **Class B, which Look 3
+never tested and which is untested rather than refuted**, and (b) made Gates 1–2a and Looks 1–3
+unreproducible — in a workspace that is not a git repository, so irreversibly. A result whose code
+has been deleted is an assertion, not a result.
+
+**What replaces it.** The rejection is enforced where it actually bites, and by a test rather than
+by prose (prose does not survive a future session):
+
+1. `LogitRecalibration` and `MarketBaseline` are removed from `kairos.__all__` and from the package
+   namespace. They remain importable from `kairos.baseline` for the scripts that reproduce recorded
+   results.
+2. `SettlementTerms` stays exported, explicitly because Class B uses it — not because Class A
+   rescued it.
+3. `tests/test_baseline.py::TestRejectedHypothesisIsContained` asserts the rejected names are absent
+   from the package surface, that the settlement model is still present, that the retained code
+   still runs, and that **no file outside a named allowlist imports a rejected class**. The last one
+   is the anti-drift guard, and it was negative-tested against a deliberately planted rogue importer
+   before being trusted.
+
+**This amendment does not touch the verdict, the alpha, the materiality floor, or the two
+hypotheses.** It changes only the disposition of code after the verdict, and it is recorded here
+rather than applied silently because amending a registration after seeing its result is exactly the
+move that needs a paper trail.
+
+**General rule extracted (AXIOMS C9 clarification):** a decision rule must name the *hypothesis* it
+retires and the *path* it retires it from. Naming a file is a proxy that fails whenever one module
+serves two hypothesis classes.
+
+---
+
+## Look 3 — the same replication, on a universe offset pagination could not reach
+
+> **REGISTERED 2026-09-08, before any windowed market data was fetched.** Frozen while the only
+> outcome-bearing data on disk was look #1's 731 events and look #2's 115.
+> Run with `python replicate.py --windowed`.
+>
+> **STATUS: RUN 2026-09-08 — NEITHER HYPOTHESIS REPLICATED. Class A forecasting edge REJECTED.**
+> 1,966 fresh events, 983 tested out of sample. `C_logit` `+0.00371` (p=0.0335, 0.987% of benchmark)
+> failed both the registered `alpha = 0.025` and the 1% materiality floor, each by under 0.02pp;
+> `drift` reversed sign to `−0.00051`. Look #1's effects shrank 72% and 104% respectively, exactly
+> as pre-committed. Sealed holdout **not** queried. See [`LOOK3-RESULTS.md`](LOOK3-RESULTS.md).
+
+### Why Look 2 could not answer, and why this is not optional stopping
+
+Look 2 ran exactly as registered and returned **WITHHELD**: it needed 700 fresh events and the
+universe yielded **115**. The cause is an apparatus ceiling, measured afterwards against the live
+API with a second method:
+
+| probe | result |
+|---|---|
+| `offset` = 1900, 2000 | 100 markets each |
+| `offset` ≥ 2100, **every** ordering, with and without `order` | **HTTP 422** |
+| `limit` = 500, `limit` = 1000 | silently capped at 100 |
+| the same query inside an `end_date_min`/`end_date_max` window | **its own 2100 budget** |
+| two adjacent quarterly windows | **overlap = 0 markets** |
+| quarterly sweep, 2021–2026 | **26,143 resolved markets** vs 2,100 |
+
+So `--pages 60` and `--pages 21` return identical data, and Look 2's registered sample size was
+never reachable by the method it registered. **This is not "fetch more because the p-value
+disappointed."** The stopping rule exists to forbid collecting until significance; what happened is
+that the retrieval mechanism could not deliver the pre-registered *n*, which is an apparatus defect,
+and it is diagnosed and fixed before the target is changed. The target is not being changed.
+
+### Frozen design — inherits Look 2 unchanged except where stated
+
+| Decision | Value |
+|---|---|
+| **Retrieval** | quarterly `end_date_min`/`end_date_max` windows, swept **newest-first**, `fetch_resolved_markets_windowed` |
+| **Window order** | chronological, newest first. **Not** "windows with the most markets" — that would select windows on a property of the sample |
+| **Excluded events** | **all 846 already seen** — look #1's 731 *and* look #2's 115. Look #2's numbers have been read, so those events are spent |
+| **Stopping** | sweep windows in the registered order until **1,500 fresh events** are admitted, then stop. Chosen because Gates 1 and 2a independently sized the re-test at 1,400–1,900 events, not because of any Look-2 result |
+| Lead time, alpha, materiality, the two hypotheses, splits | **unchanged from Look 2** |
+
+**The stopping count is a sample-size target, not a significance target.** It is fixed here, before
+the data exists, and the run stops when it is met whatever the p-values are doing. If the sweep
+exhausts all 24 windows below 1,500 fresh events, the verdict is WITHHELD again and the registered
+next move stands: a different venue or a forward paper test.
+
+### What Look 2's numbers may and may not be used for
+
+Look 2 measured `C_logit +0.02468 (p=0.3928)` and `drift +0.05338 (p=0.0915)` on 115 events. These
+are **not** evidence and **not** a planning input:
+
+- They are outcome data that has now been seen, so those 115 events are excluded from Look 3
+  entirely — reusing them would make Look 3 a second look on part of its own sample.
+- They must not be offered as "encouraging". At 115 events the estimate is enormously noisy, and it
+  is the larger of two, so it carries the same selection inflation already registered against look
+  #1's `+0.012` (A1, and Jaksic et al. 2026).
+
+Two hypothesis classes run in parallel against the same evidence machinery. They are **not** ranked
+theoretically — they compete (E4).
+
+- **Class A — Forecasting edge.** Can a forecaster add information beyond `q_ref`? Prioritise
+  **early, high-uncertainty markets**, where TimeSeek finds LLMs relatively most competitive and
+  where the market's own aggregation is slowest.
+- **Class B — Structural edge.** Can a language model discover semantic/payoff relationships across
+  contracts that deterministic code then *proves* mispriced and executable? This uses the LLM's
+  comparative advantage — language and relationship discovery — rather than asking it to be a
+  superior probabilistic trader. The LLM proposes; deterministic code verifies payoff identity,
+  book depth, and executable profit, and decides (D5).
+
+---
+
+## Gate 0 — Null-world falsification of Kairos itself
+
+> **STATUS: PASSED 2026-09-08.** Worst null rejection rate 0.067 against nominal 0.05; power 0.667 on the strong control against an oracle ceiling of 0.767. See [`GATE0-RESULTS.md`](GATE0-RESULTS.md) for the full table and its limitations.
+
+**This ranks above all strategy discovery (A7).** Before asking whether Kairos can find an edge,
+ask whether it can correctly find *nothing*.
+
+Run the **complete** research workflow — including any LLM mutation/research loop — against:
+
+- martingale / zero-predictability synthetic markets
+- shuffled outcomes
+- time-shifted information
+- irrelevant and pure-noise features
+- microstructure placebos with realistic noise
+- synthetic fair markets
+
+**Pass — both conditions:**
+
+1. **False positives.** No null world's rejection rate exceeds what chance allows at `alpha`,
+   judged by the exact binomial tail rather than an invented tolerance.
+2. **Power.** The strong positive control is detected at least `POWER_FLOOR` of the time. A pipeline
+   that never reports an edge passes condition 1 trivially while being useless.
+
+**Fail:** if Kairos repeatedly produces statistically convincing "alpha" where none exists, **the
+research pipeline is falsified and Stage 0 stops.** Fix the pipeline. Do **not** tune the null
+worlds until it passes (A8).
+
+**The oracle ceiling.** Every positive control is also run through an *oracle* forecaster built from
+the world's own generating parameters. No method can beat it, so its detection rate is the power
+ceiling at that sample size. This is what separates the two possible causes of a power failure:
+
+- oracle detected, Kairos not → **the pipeline is inert.** Fix the pipeline.
+- oracle also not detected → **the sample is too small.** Gather more events. Saying anything about
+  the pipeline from this case would be an error (A1: "not enough evidence" ≠ "no edge").
+
+**Measured sample requirement (Gate 0 run, 2026-09-08).** Oracle power against a heavily compressed
+market, one-sided `alpha=0.05`:
+
+| independent events | 20 | 40 | 80 | 160 | 320 | 640 |
+|---|---|---|---|---|---|---|
+| oracle power | 0.183 | 0.333 | 0.500 | 0.667 | **0.933** | 1.000 |
+
+**A market-relative forecasting edge needs hundreds of independent events to detect — not dozens.**
+This is a hard constraint on Gate 2 and on Stage 0's feasibility, and it was not visible before the
+harness was built. Any evaluation set below ~300 independent events cannot support a fund/kill
+decision on Class A, however many contract rows it contains.
+
+### Gate 0b — the stratified protocol (pre-registration, written before the run)
+
+> **STATUS: RUN 2026-09-08 — test-only stratification REJECTED.** The max-t correction passed
+> (uncorrected search rejects a true null at 0.188 against nominal 0.05; corrected 0.062), but the
+> protocol detects **less** than not stratifying on both signal shapes and clears no power floor.
+> No stratified result may be reported from real data. The fit-level variant is untested and is not
+> being built. See [`GATE0B-RESULTS.md`](GATE0B-RESULTS.md).
+
+Gates 1 and 2a both tested a **single average over the whole sample**. The favourite-longshot
+literature says the market's error is not uniform across price, and Page et al. say it is not
+uniform across time-to-expiry either. Testing inside strata is therefore a live candidate — and it
+is also a *search*, so it needs its own Gate 0 before it may touch real data (A7).
+
+**Frozen before any stratified result was seen:**
+
+- **Price bands.** `longshot [0.02,0.15) · lowmid [0.15,0.40) · mid [0.40,0.60) · highmid
+  [0.60,0.85) · favourite [0.85,0.98)`, in `kairos.nullworld.PRICE_STRATA`. Taken from where the
+  published bias claims live, not from our data. **Moving a boundary after seeing a result converts
+  the test into a search over cut points, which the correction below does not cover** (A8, C7).
+- **Minimum stratum size.** 20 independent events. Below that the stratum is excluded before
+  anything is computed, and the exclusion is reported (`MIN_STRATUM_CLUSTERS`).
+- **Correction.** Max-t against a shared cluster resample (`inference.max_statistic_test`). One
+  resample per replicate, every stratum recomputed on it, so the correlation between strata is
+  preserved rather than assumed. Studentised, because comparing raw means hands the maximum to the
+  smallest stratum by construction.
+- **Gate condition.** `strat_maxt` is gated on false-positive rate **and** power. A correction that
+  restores the rejection rate by making the test unable to detect anything has not fixed the search.
+
+**Both null-world questions must be answered, and the second is the one that decides it:**
+
+1. Does the correction control the false-positive rate? *(measured: yes)*
+2. Does stratifying detect more than not stratifying — on a signal of the shape the hypothesis
+   actually posits, i.e. **concentrated in one band**? `inject_signal` misprices at every price, so
+   it can only answer this for a diffuse edge. `inject_banded_signal` exists for the concentrated
+   case and `gate0b.py` runs the comparison.
+
+**A stratified result on real data is admissible only if `strat_maxt` clears both conditions.**
+If it wins on concentrated signal and loses on diffuse, the protocol choice is a *bet on the shape
+of the signal* and must be registered here before the run, not chosen once the answer is visible.
+
+---
+
+## Gate B — Null-world falsification of the Class B pipeline
+
+> **STATUS: PASSED 2026-09-08.** Fire rate **0.000** across six arbitrage-free worlds × five horizons
+> (1,000 groups each); the independent positive control detected at **1.000**. The naive scanner
+> fires at up to **1.000** in the same worlds. See [`GATEB-RESULTS.md`](GATEB-RESULTS.md).
+
+Gate 0 asks whether the pipeline invents *forecasting skill*. Gate B asks whether it invents
+*riskless profit*, which requires no forecasting to be wrong about — a different failure mode, so a
+different gate. `docs/CENSUS-RESULTS.md` **Decision 001** held Class B behind it because its
+false-positive mode was **unmeasured and severe** (A7).
+
+**Arbitrage-free worlds, all of them:** fair groups at 7 d–2 y; fair + quote noise; truncated leg
+sets; non-exhaustive outcome spaces; real edges on an unfillable book; and a **marginal** group
+unprofitable by exactly 0.005 after costs.
+
+**The marginal world is the one that matters.** Every other null is rejected by a *structural
+refusal* — a boolean saying the leg set is incomplete or exhaustiveness unverified — which tests
+flag-honouring rather than arithmetic. In `marginal` the structure is impeccable and only the fee,
+spread and carry calculation stands between the scanner and a false fire.
+
+**Pass — both conditions**, as Gate 0: no arbitrage-free world's fire rate exceeds chance on the
+exact binomial tail, **and** a genuine fillable edge is detected at least `POWER_FLOOR` of the time.
+A scanner that refuses everything passes the first trivially.
+
+**The positive control must not be defined by the detector.** The first version bisected on
+`effective_yes_cost` to hit a target post-cost edge — the scanner's own formula — so detection was
+guaranteed by construction. That is the retracted Gate-2a demo defect. The gating control now scales
+quotes to a fixed **nominal** sum of 0.70, which is riskless under any defensible cost model.
+
+**Carry is charged once (C7).** `effective_yes_cost` already includes it, so the payoff stays a
+nominal $1 and is never discounted a second time.
+
+### What Gate B does not license
+
+Passing licenses a **candidate generator**, never a confirmed arbitrage (A5, D1). Two limits are
+load-bearing:
+
+1. ~~**Completeness is handed to the scanner as a boolean.**~~ **CLOSED 2026-09-08** — see
+   [`LEGSET-RESULTS.md`](LEGSET-RESULTS.md). The `truncated_believed` exhibit fires **1.000 at every
+   horizon** and no arithmetic inside the scanner can prevent it, so the defence was built outside
+   it: `kairos.legset.verify_leg_set` checks a held leg set against the authoritative
+   `/events/<id>` listing, and `scan_verified` refuses anything not carrying a verification.
+   The threat was measured at the same time and is **larger than the census anecdote**: real groups
+   assembled through offset pagination are **49% truncated**, missing **60%** of their legs.
+   **Exhaustiveness is now arithmetic, not a flag.** Only 36% of groups carry an explicit
+   `negRiskOther` leg, but **512/512 resolved groups had exactly one winner** — bounding the failure
+   rate at **0.59%**, which is still not zero, because failure costs the whole stake rather than the
+   edge. Break-even is `edge/(edge+stake)`, so the tradeable floor is **~1%** (it was ~5% at a
+   75-group sample; extending it is the cheapest lever there is). Regenerate with
+   `python exhaustiveness.py`; never hand-edit the constants.
+2. ~~**Depth is synthetic.**~~ **CLOSED 2026-09-09** — `kairos.book` prices each leg at the VWAP to
+   fill the target size off the real ask book. A counterparty who withdraws on being hit remains
+   unmodelled and is still Gate 3.
+
+---
+
+## Gate C — Cross-venue structural mispricing, and the semantic-identity null gate
+
+> **STATUS: NULL GATE PASSED 2026-09-09. MEASUREMENT RUN 2026-09-09 — WITHHELD.**
+>
+> `python gatec.py`: the matcher pairs true cross-venue pairs at **1.000** and pairs at **0.000** in
+> all seven registered null worlds, 400 pairs each, every world's oracle ceiling 1.000. The gate run
+> changed two things in this registration, both recorded rather than quietly applied: the frozen
+> evidence list was **incomplete**, and the first version of the matcher produced a **false pair**.
+>
+> `python scanc.py`: **0 verified pairs** out of ~8.7M same-date candidates against a registered
+> floor of 200, so the verdict is WITHHELD and **the kill rule does not fire**. The zero is
+> **structural, not empirical** — see below — and the measured blocker is not the one this
+> registration predicted.
+>
+> **REGISTERED 2026-09-09, before any paired market data was fetched.** Frozen while the only
+> venue data on disk was Polymarket's, and while nothing had paired a Polymarket market to a Kalshi
+> one. Runs: `python gatec.py` (the null gate) then `python scanc.py` (the measurement).
+> Method: `principles-20-solutions`, proportionality 4/4, Consensus-backed.
+
+### Why this hypothesis, and what it replaces
+
+Class B's canonical form is **refuted at this venue**: 78 completable negRisk groups across the full
+reachable open universe, **zero** with a positive post-cost edge, closest `-0.006`; and re-running at
+10 and 5 contracts a leg changed nothing, so it is not a sizing artefact.
+
+The principal cause of that null is now identified: **we scanned the one arbitrage form Polymarket's
+own NegRisk adapter exists to eliminate, on a single venue, at a static instant.** The literature
+locates the surviving structural edges elsewhere:
+
+| finding | source |
+|---|---|
+| **$40M realised profit** extracted from Polymarket arbitrage; two forms, *rebalancing* and *combinatorial* | Saguillo et al. 2025, `10.48550/arxiv.2508.03474` |
+| Combinatorial episodes concentrated **in the final minutes of live play**, 101 bps median, **76.9% capped at ~14.8 shares** | Cheng et al. 2026, `10.48550/arxiv.2605.00864` |
+| **Cross-platform deviations of 2-4%**, persistent, *structural rather than informational*; ~6% of events dual-listed; 100k events, 10 venues | Gebele et al. 2026, `10.48550/arxiv.2601.01706` |
+| Polymarket vs Binance options: **5.6-6.3pp** mean gap, AR(1) half-life ~4h, profitable after conservative costs | Portnaya 2026, `10.48550/arxiv.2606.19517` |
+| **Limits to arbitrage are directly measurable**: Ecuador's 2.0pp half-spread equalled the 2.1pp cross-venue gap | Bendezu 2026, `10.2139/ssrn.6434079` |
+
+Cross-venue is chosen over the alternatives because its documented effect (2-4%) is **4-7x our best
+observed intra-venue deviation (0.6%)**, both venues are publicly reachable without authentication
+(verified 2026-09-09), and it reuses the existing cost model, book-depth layer and verification
+discipline rather than needing new machinery.
+
+**Rejected, with reasons recorded so they are not silently revisited:**
+
+- **Kalshi parlay markup.** Legs are explicitly published (`mve_selected_legs`), so it has no
+  semantic-identity problem — which made it look ideal. But **a parlay cannot be statically
+  replicated from its legs**: owning one of each of N legs pays *number-of-winners*, not
+  $1-iff-all-win. Parlay overpricing is therefore an **edge with variance, not a riskless
+  arbitrage**, and belongs to a different hypothesis class. Filed, not pursued.
+- **In-play combinatorial.** Real (290 episodes) but capped at ~14.8 shares and requiring continuous
+  live monitoring. Retail-scale ceiling, disproportionate apparatus.
+- **Polymarket vs listed options.** Largest documented gap, but needs an options pricing model and
+  delta hedging — a much larger build for a relative-value trade that is also not riskless.
+
+### The hypothesis, stated so it can fail
+
+> **H:** For events listed on both venues and verified to be the *same* event, the executable price
+> deviation — measured at size off both real order books, net of both venues' round-trip costs — has
+> a **positive median**.
+
+Failing means the deviation is consumed by friction, which is Bendezu's measured finding on three
+Latin American elections and is the outcome this registration expects to be tested against, not the
+outcome it hopes for.
+
+---
+
+### Gate C — the semantic-identity null gate (runs first, always)
+
+**The false-positive generator is semantic non-fungibility**: two markets that *look* identical and
+resolve differently. It is the exact analogue of leg-set truncation, which Gate B measured as
+carrying the entire Class B defence — and Gebele et al.'s whole contribution is that resolving event
+identity is the prerequisite, not a detail.
+
+So no pairing pipeline touches real paired data until it can correctly find **nothing** in worlds
+built to contain no true pair (A7).
+
+**Null worlds — every pair below is NOT the same event, and must be refused:**
+
+1. **Horizon mismatch** — same subject, different resolution date ("by Dec 2026" vs "by Mar 2027").
+2. **Threshold mismatch** — same underlying, different strike ("BTC above $100k" vs "above $120k").
+3. **Scope mismatch** — same actor, different question ("wins the election" vs "wins the popular
+   vote").
+4. **Resolution-source mismatch** — same question, different arbiter or certification standard.
+5. **Settlement-time mismatch** — same question, one settling at market close and one at a fixed
+   clock time.
+6. **Negation pair** — X on one venue, NOT-X on the other. These are *complements*, not identities;
+   a pipeline that treats them as the same event has inverted a sign.
+7. **Random pairing** — unrelated markets, the floor case.
+
+**Positive control:** genuinely identical events — same underlying, same threshold, same resolution
+date, same resolution semantics — which the pipeline must pair. A matcher that refuses everything
+passes every null trivially and is worth nothing, exactly as in Gate 0 and Gate B.
+
+**Pass — both conditions, as every gate here:**
+
+1. **False positives.** No null world's pairing rate exceeds what chance allows, on the exact
+   binomial tail rather than an invented tolerance.
+2. **Power.** True pairs are matched at least `POWER_FLOOR` of the time.
+
+**Gated per unit, never in aggregate** (`kairos.validity`, AXIOMS G3/G4), and the exhibit alongside
+it is a **naive title-similarity matcher**, retained because the size of its failure is the argument
+for every refusal the real matcher makes.
+
+### What the null gate found — run 2026-09-09, 400 pairs per world
+
+| world | truly same? | matcher | naive exhibit | refused by |
+|---|---|---|---|---|
+| identical (control) | yes | **1.000** | 1.000 | — |
+| horizon mismatch | no | 0.000 | 1.000 | `resolution_date_differs` 400/400 |
+| threshold mismatch | no | 0.000 | 1.000 | `threshold_differs` 400/400 |
+| scope mismatch | no | 0.000 | 1.000 | `scope_differs` 400/400 |
+| resolution-source mismatch | no | 0.000 | 1.000 | `resolution_source_differs` 400/400 |
+| settlement-time mismatch | no | 0.000 | 1.000 | `settlement_time_differs` 400/400 |
+| negation pair | no | 0.000 | 1.000 | `polarity_differs` 400/400 |
+| random pairing | no | 0.000 | 0.590 | `scope_differs` 385/400 |
+
+Every world's oracle ceiling is 1.000, so no false-positive rate here is a statement about a
+contaminated world. **Each of the six comparisons is necessary**: `tests/test_identity.py` removes
+them one at a time and shows that exactly one null world starts pairing each time.
+
+**The gate found a false pair on its first run, and the pass/fail column did not show it.** The
+date-stripper matched `\b(?:19|20)\d{2}\b`, which deleted *any* strike in 1900–2099 — so two markets
+quoted at 2000 and 2050 both parsed to no strike, agreed on everything else, and were declared the
+same event. What exposed it was the refusal-*reason* column reading `threshold_differs 386/400`
+while the fire rate read a clean 0.000. Fixed by taking the resolution year from the published close
+timestamp instead of guessing it out of the title; the residual ambiguity (a strike equal to its own
+resolution year) now fails closed, and can cost power but provably cannot produce a false pair.
+
+**The exhibit's result is stronger than "the naive matcher over-fires."** Swept over 60 thresholds
+and reported at the one most favourable to it, the best achievable separation between true pairs and
+near-misses is **+0.000** — non-positive. There is no similarity cut at which it does better than
+chance. The reason is measurable rather than rhetorical: for the source and settlement-time worlds
+the similarity vector is *identical* to the control's, pair for pair, because a venue puts neither
+the arbiter nor the settlement clock time in the title. The evidence that separates a hedge from a
+double position is not in the text the eye compares.
+
+---
+
+### Frozen parameters
+
+| decision | value | why this |
+|---|---|---|
+| Venues | Polymarket (Gamma + CLOB) and Kalshi (`trade-api/v2`) | Both verified publicly reachable, unauthenticated, 2026-09-09 |
+| Pairing evidence | resolution date, **settlement clock time**, threshold/strike, resolution source, scope, and side polarity — **all six must agree** | Any single one disagreeing makes the payoff non-identical, which is the whole failure mode. **Amended 2026-09-09 from five to six, after the null gate falsified the list**: this registration's own settlement-time null world agrees on all five originally frozen fields, so a matcher restricted to them could not refuse it. Recorded rather than silently widened (`CORRECTIONS.md` Pass 18) |
+| Deviation measured | **executable**, at size, off both real ask/bid books | An edge at the touch is not an edge at size (D1). Top-of-book comparison is what makes cross-venue gaps look larger than they are |
+| Target size | 25 contracts a side, **and** reported as a curve over 5/10/25/50 | Size was held at one value in the negRisk scan and had to be re-run to refute a sizing artefact; C11 says do not hold a design variable constant |
+| Costs | Both venues' round-trip: fee + half-spread + carry, charged **on both sides** | Capital is locked at two venues simultaneously, so carry is paid twice. Kalshi's fee schedule must be **verified against its published terms before the run**; pending that, the conservative quadratic form is assumed |
+| alpha | 0.05 one-sided | Single pre-specified hypothesis; no family to correct |
+| Materiality | deviation must exceed the **round-trip cost on both venues combined** | A statistically real 0.3% gap inside a 2% cost is not an edge (Gate 1's lesson) |
+
+### The resolution-divergence bound — registered as arithmetic, not a flag
+
+Semantically identical markets can still resolve **differently**; that is semantic non-fungibility
+realised, and it is the catastrophic case, because both legs lose rather than one. This is
+structurally the same problem as negRisk exhaustiveness and gets the same treatment:
+
+- measure the divergence rate on **resolved** dual-listed pairs;
+- express it as a **rule-of-three upper bound**, never as zero (A6);
+- require `bound < edge / (edge + stake)` before any pair is called a candidate.
+
+`kairos.legset.residual_failure_bound` and `break_even_failure_rate` are reused unchanged. The
+measurement is generated by a script and its constants are **regenerated, never hand-edited**, as
+`exhaustiveness.py` established.
+
+### What the measurement found — run 2026-09-09, `scanc.py`
+
+4,156 Polymarket descriptors against 114,540 Kalshi descriptors from 12,616 events (both venues swept
+to the depth their APIs reach — Polymarket's offset ceiling, Kalshi's cursor exhaustion), blocked on
+resolution date across 132 shared dates into **8,765,271** same-date candidate pairs.
+
+| outcome | count |
+|---|---|
+| verified as the same event | **0** |
+| agreeing on everything either venue **publishes** | **1** |
+| agreeing on scope | 3 |
+
+**The zero is structural.** Polymarket publishes no determination instant: `endDate` is a day
+boundary — **65% at exactly 00:00Z, ~95% day-boundary across 788 open markets** — so under the
+six-piece evidence rule above, no Polymarket/Kalshi pair *can* verify, whatever the venues list.
+Reading this 0 as a statement about how many events the two venues share would take an instrument's
+ceiling for the world's floor (AXIOMS G12).
+
+**What it does establish is more useful than the count.** The scope check — the one that could have
+failed on vocabulary alone, "Bitcoin" against "BTC" — agreed on three real dual-listed events, and
+one of them agrees on every piece of evidence either venue publishes:
+
+| Polymarket | Kalshi | blocked only by |
+|---|---|---|
+| Will Trump recognize Somaliland before 2027? | Will Trump recognize Somaliland? | unrecoverable: source, settlement time |
+
+So **the venues share events and the matcher recognises them.** That first run concluded the binding
+constraint was a missing instrument rather than a missing market. **Gate C2 built the instrument and
+refuted that conclusion** — see below.
+
+The single provisional pair was **deliberately left unpriced**. Putting a deviation on the table
+before the instrument that produces it has passed a gate is how Look 1 spent its alpha.
+
+### What Gate C2 found — re-run 2026-09-09 with the extractor in place
+
+> **STATUS: PASSED, THEN RE-MEASURED — VERDICT UNCHANGED, WITHHELD.** `gatec.py` passes with nine
+> null worlds (power 1.000, every null 0.000). `scanc.py`: 4,103 Polymarket against 115,379 Kalshi
+> descriptors from 12,716 events, 8,690,013 same-date candidate pairs, **0 verified**.
+
+The extractor works — it reconstructs the Somaliland market's `endDate` from that market's own prose
+to the minute. What it revealed is that the genuinely dual-listed pairs **are not the same event**.
+
+Of the **3** pairs that agreed on scope — the ones a human would call the same market — the blockers
+were `resolution_source` unavailable (2), **`settlement_time_differs` (2)**, `threshold_presence`
+(2), `modality` unavailable (1), `resolution_source_differs` (1).
+
+| | Polymarket | Kalshi |
+|---|---|---|
+| market | Will Trump recognize Somaliland before 2027? | `KXRECOGSOMALI-29-27`, "Before 2027" |
+| determination instant | **2027-01-01T04:59Z** | **2027-01-01T15:00Z** |
+
+**Ten hours and one minute apart**, both labelled "before 2027". An event in that window resolves YES
+on Kalshi and NO on Polymarket, so a position held across the two as a hedge **is not a hedge** —
+both legs lose. The same gap appears on the second pair. This is the semantic non-fungibility this
+gate was registered to catch, measured on live markets rather than assumed, invisible in every title,
+and present on the pairs that look *most* identical.
+
+**Pass 22 withdrew the conclusion drawn here.** This section originally read that the venues "list
+very few mutually fungible events". They do not: `recall.py` surfaced 22,866 token-overlap candidates
+and **26 of the top 26 are plainly the same event, of which the matcher paired 0**. The count of 3
+was a property of the matcher, not the venues. Gate C's **power 1.000 was circular** — its positive
+control was published by the same generator its parser was written against (AXIOMS G14).
+
+### Gate C2 — the settlement-instant extractor
+
+> **REGISTERED 2026-09-09, before the extractor was written and before it was pointed at any paired
+> data.** Runs: `python gatec.py` (extended null worlds) then `python scanc.py`.
+
+The measurement above is blocked on one missing instrument. This registers it, and registers the
+null worlds it must survive first, because it is new extraction logic and Gate C's existing worlds
+never exercised it (A7).
+
+**The correction that prompted it.** `scanc.py` treated Polymarket's settlement clock time as
+unrecoverable on the grounds that `endDate` is a day boundary. That was too broad. The Somaliland
+market's prose says *"by December 31, 2026, 11:59 PM ET"* and its `endDate` is `2027-01-01T04:59Z` —
+**the same instant**. 04:59Z is not a placeholder, it is midnight-ET. So the time is not
+unrecoverable; it is **unconfirmed**, and the fix is a cross-check rather than an assumption.
+
+**What the extractor must do.**
+
+1. Recover a determination instant from the rules prose — `<Month> <D>, <YYYY>, <H>:<MM> <AM/PM>
+   <TZ>` and `on <Month> <D>, <YYYY> at <H> <AM/PM> <TZ>` — converting to UTC. `ET` resolves through
+   `America/New_York` so daylight saving is handled by the zone database rather than a hardcoded
+   offset; `UTC`/`GMT` map to UTC; **any other zone is unrecoverable.**
+2. **Confirm it against `endDate`, to the minute.** Agreement makes the instant recoverable.
+   Silence in the prose makes it unrecoverable. *Disagreement* also makes it unrecoverable, and is
+   counted — two sources contradicting each other is the one case that must never be resolved by
+   picking a favourite (A6). This is the leg-set pattern: use the authority, but verify it.
+
+**Modality becomes the seventh piece of evidence.** *"Will X happen **by** T"* and *"Will X be true
+**at** T"* are different events — a barrier and a digital — and they carry the same timestamp. An
+extractor that returns an instant while discarding which of the two it came from would **create**
+the semantic non-fungibility this whole gate exists to catch. Recovered from prose on Polymarket
+(`by`/`before` → deadline, `on … at` → instant) and from `yes_sub_title` on Kalshi (`Before …` →
+deadline; `On …`/`At …`/a strike → instant). Unrecoverable on either side fails the pair closed.
+
+This is the **second** amendment to Gate C's frozen evidence list, after the settlement instant
+itself in Pass 18. Both were found by building against the registration, and both are recorded here
+rather than quietly applied.
+
+**Two new null worlds, and one strengthened control:**
+
+| world | must be | why |
+|---|---|---|
+| **Modality mismatch** | refused | Same subject, same timestamp, one phrased as a deadline and one as an instant. Agrees on all six previously registered fields. |
+| **Prose-instant contradiction** | refused | The rules text states a time that contradicts the structured close timestamp. Tests the confirmation rule; a pipeline that trusts either source alone passes this by accident. |
+| **Control: prose-only vs structured** | paired | The same event where one venue publishes the instant only in prose and the other structurally. This is the real cross-venue case, and a matcher that cannot do it has no power where it matters. |
+
+**Pass conditions are unchanged** — no null world above chance, control above `POWER_FLOOR`, gated
+per unit. **The extractor may not be used by `scanc.py` until `gatec.py` passes with these worlds
+in it.**
+
+### The stopping rule was followed: the venue-pair branch is exhausted
+
+> **RUN 2026-09-09, `python venues.py`.** The rule below says that under 200 verified pairs the
+> honest next move is *a different venue pair*. That move was made, as a **feasibility probe before
+> an adapter** — building one costs a day and three of the four checks kill a candidate in a minute.
+
+A venue can host this measurement only if it publishes **all three** of: resolution rules, a
+determination **instant**, and order-book **depth**. Gate C2 measured why the instant is not a
+formality, and D1 measured why the touch is not depth.
+
+| venue | reachable | rules | determination instant | depth | verdict |
+|---|---|---|---|---|---|
+| Polymarket | yes | prose | prose-confirmed on ~7% | CLOB | incumbent |
+| Kalshi | yes | structured | structured | yes | incumbent |
+| **PredictIt** | yes | **none — no rules field at all** | 116/590 carry a bare date, **never a clock time** | **none — top-of-book only** | unusable |
+| **Smarkets** | yes | 19/60 events | **0/55 structured, 0/55 from prose** | yes, real ladder | unusable |
+| Manifold | yes | — | — | AMM | play money, resolved at the **creator's discretion** — not a data limit, a payoff-identity impossibility |
+| Metaculus | HTTP 403 | — | — | — | no money at stake; a forecast source, not a venue |
+| Insight / Limitless | 401 / 404 | — | — | — | authenticated or gone |
+
+**No publicly reachable third venue publishes a determination instant.** Smarkets is the near miss —
+real exchange, real ladder, real rules on some events — and it publishes no settlement time at all,
+which after Gate C2 is known to be the difference between a hedge and two losing legs.
+
+**This section's conclusion was withdrawn by Pass 22 and is retained for the record.** It read that
+Class B cross-venue is NOT TESTABLE and that F3 created a deadlock. Both were wrong:
+
+- **NOT TESTABLE** rested on the claim that the venues share few fungible events. `recall.py`
+  falsified it: 26 of the top 26 token-overlap candidates are the same event and the matcher paired
+  **0**. Recall, never measured until Pass 22, is ~0.
+- **The F3 deadlock was a misreading.** F3 forbids *"broker integration, live capital, or production
+  executor"*. Reading market data with an application key is none of the three. The constraint was
+  quoted without being checked.
+
+The third-venue inventory above still stands as a measurement — PredictIt and Smarkets genuinely do
+not publish what Gate C requires — but it answers a question that was not the binding one.
+
+### Gate C3 — the recall floor and the adjudicated alignment table
+
+> **REGISTERED 2026-09-09, before the alignment table was built and before any price data was
+> fetched for any pair in it.** Runs: `python align.py` (surface + adjudicate) then
+> `python scanc.py --alignment` (measure).
+
+Pass 22 measured what four passes had assumed: the matcher's recall on real venue text is **0/26**,
+against a false-positive rate of 0.000 across nine adversarial null worlds. It is a maximally
+conservative instrument, and every conclusion drawn from its verified count measured the instrument.
+
+**Precision transfers out of a null world; power does not** (AXIOMS G14). So this gate registers the
+missing half.
+
+#### The recall floor
+
+**`RECALL_FLOOR = POWER_FLOOR = 0.50`.** Deliberately the repo's existing constant rather than a new
+one — inventing a threshold *after* seeing that the old instrument scored zero is how a floor gets
+chosen to be clearable. The justification is Gate 0's, unchanged: an instrument that misses more than
+half of what it is looking for cannot support a null, because its count is then a statement about
+the instrument (G12).
+
+**Binding:** `scanc.py` may not announce any verdict — including WITHHELD — unless measured recall
+against the frozen table is at or above the floor. Below it, the run reports *no verdict* in the
+sense `kairos.validity` already means it.
+
+**Precision may not be traded for recall.** The nine null worlds must still return rates
+indistinguishable from chance on the exact binomial tail. A matcher that buys recall by loosening is
+the failure this whole protocol exists to prevent (A7, A8).
+
+#### The adjudicated alignment table
+
+Gebele et al. built a **human-validated** cross-platform dataset; that is the method, and it is
+adopted here rather than a runtime fuzzy matcher, which would add an ungated instrument and a
+dependency.
+
+**Construction, frozen now:**
+
+1. **Candidates are surfaced mechanically** — token overlap through an inverted index, using no check
+   the matcher makes, so a pair the matcher would refuse for date, source, threshold or modality
+   reasons still appears. Cherry-picking is excluded by construction.
+2. **Adjudication happens before any price is fetched.** The table is built from titles and rules
+   only. This is the one protection that matters, because the adjudicator knows which answer is
+   convenient, and it is enforceable: no book is fetched until the table is frozen.
+3. **Every pair records its label and its reason**, so the table is auditable rather than asserted.
+
+**Three labels, defined before use:**
+
+| label | definition | how it may be used |
+|---|---|---|
+| **IDENTICAL** | A YES on one venue and a NO on the other pays exactly $1 in **every** state of the world | Riskless leg of Class B. Counts toward the 200-pair floor |
+| **FUNGIBLE-WITH-BASIS** | Same underlying question, but with a **measurable** divergence risk — a deadline gap, a different arbiter — so the two can resolve differently in states that can be enumerated | Counts toward the floor **only** with a divergence bound below `break_even_failure_rate` at the measured edge |
+| **DISTINCT** | Different events. Includes every near-miss Gate C registers | Never counted. Refusing these is what the gate measures |
+
+**FUNGIBLE-WITH-BASIS is the correction Pass 22 identified.** The programme had been converting a
+quantifiable basis risk into a binary disqualifier — the Somaliland pair settles 10h01m apart and was
+refused outright — while the repo's own Gate B pattern says the opposite: express residual risk as a
+**rule-of-three bound** and compare it to `edge / (edge + stake)` **at the measured edge**. Same
+machinery, `kairos.legset.residual_failure_bound` and `break_even_failure_rate`, reused unchanged.
+
+**A basis-risk inventory is reported per pair.** For every aligned pair the mechanical checks still
+run and their disagreements are recorded — not as refusals now, but as the named ways the two legs
+can come apart. **No pair is described as riskless unless every mechanical check agrees.**
+
+#### What is not being relaxed
+
+The mechanical checks are not deleted and their thresholds are not tuned. What changes is their
+*role*: scope identity moves to adjudication, because token-set equality was measured at 0 recall;
+the rest become evidence attached to a pair rather than a veto over it. **Gate C's null worlds
+continue to gate**, and the alignment table is required to label all nine of them DISTINCT — a table
+that cannot refuse the registered near-misses is not evidence, it is a wish.
+
+### Stopping rule — binding
+
+Sweep the dual-listed universe **once**, to whatever depth the two APIs reach, and stop. Do **not**
+extend the sweep because the result disappoints. If fewer than **200 verified pairs** are found, the
+verdict is WITHHELD as underpowered — *"not enough evidence"*, never *"no effect"* (A1).
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Median executable deviation **exceeds** combined round-trip costs, on >= 200 verified pairs | A candidate class exists. Proceeds to Gate 3 (execution realism), which is where quote persistence and settlement-timing risk live |
+| Median executable deviation **does not** clear costs | **Class B is concluded and the programme ends.** Both hypothesis classes will have been tested and rejected. Record it and stop — do not open a third venue looking for a better answer |
+| Fewer than 200 verified pairs | WITHHELD. The honest next move is a different venue *pair*, not a re-test of this one |
+
+### What this gate does not cover, named now
+
+- **Settlement-timing mismatch.** The two venues may resolve at different times, so a "hedged"
+  position is not flat in between. Gate 3.
+- **Quote persistence.** Nothing models a counterparty withdrawing on being hit. Gate 3.
+- **Venue access is jurisdiction-dependent** and is an **operator precondition**, not a technical
+  question. Nothing in this repo assumes or asserts eligibility to trade either venue, and no result
+  here implies a trade is permissible.
+- **F3 stands.** No broker integration, no live capital, no production executor.
+
+---
+
+## Gate 1 — Does `q_ref` earn its existence?
+
+> **STATUS: RUN 2026-09-08 — `q_ref` REJECTED.** No transformation beat the raw quote on 731
+> independent events. Gate 2 uses raw `q`. Isotonic removed from the family; `C_logit` was
+> underpowered (p≈0.11 on +0.0134), not disproven at the time. **Re-tested and REJECTED by Look 3**
+> on 1,966 fresh events (`+0.00371`, p=0.0335 vs registered α=0.025, 0.987% vs a 1% floor), so the
+> deferral is closed. `baseline.py` is retained un-exported for reproducibility, not pending.
+> See [`GATE1-RESULTS.md`](GATE1-RESULTS.md) and [`LOOK3-RESULTS.md`](LOOK3-RESULTS.md).
+
+`q_ref` is an estimator, not truth (A2). It must beat the raw quote out of sample or be deleted.
+
+Four frozen baselines, each fitted **strictly on prior resolved markets** and evaluated on unseen
+later events:
+
+| # | Baseline |
+|---|---|
+| **A** | Raw quote `q_raw` only |
+| **B** | Settlement adjustment only |
+| **C** | Statistical recalibration only |
+| **D** | Settlement + recalibration |
+
+**Rules.**
+- Rolling/expanding temporal splits. No evaluation outcome may participate in fitting.
+- Compare recalibration families — logistic/beta in logit space (Ojeda et al.) against identity and
+  against isotonic — rather than assuming one.
+- Propagate estimation uncertainty; Le finds ~half of raw slope variation may be noise.
+- **Keep the simplest survivor** (C9). A more complex baseline that does not produce a reproducible
+  OOS gain over a simpler one is removed, not retained "for later".
+- Do not select the winner on the final test set.
+
+This gate also settles the double-counting question that code order cannot (C7): if B and D are
+indistinguishable, the settlement adjustment is being re-learned by the recalibration and one of
+them goes.
+
+---
+
+## Gate 2 — Forecast superiority
+
+> **STATUS: 2a RUN 2026-09-08 — ladder stopped at rung 2.** No leakage-free forecaster beat
+> the market price; best was `drift` (+0.01193, p=0.1174). Pooling machinery deliberately NOT
+> built. **2b (LLM) is blocked on leakage** - these markets resolved inside frontier training
+> windows. See [`GATE2A-RESULTS.md`](GATE2A-RESULTS.md).
+
+Primary test as registered in §0, on frozen out-of-sample observations.
+
+- Resample at the highest meaningful event cluster; preserve chronology and regime structure.
+- Model dependence **across** nominal events that share news regimes, settlement variables, or
+  common drivers (C3).
+- Report both `p` vs `q_raw` **and** `p` vs `q_ref`. Hindcast supplies an independent third-party
+  `p` vs `q_raw` comparison; do not modify it to use `q_ref` (EVIDENCE §7). If the two stories
+  diverge sharply, investigate before proceeding.
+- Report power. "Not enough evidence yet" ≠ "no edge" (A1).
+
+**Ensemble sub-protocol.** Before any weighting machinery, measure pairwise forecast-error
+correlation `ρᵢⱼ` and report the effective number of independent forecasters (C8). Then run, in
+this order, and stop at the first that is not beaten:
+
+1. market alone
+2. best single model
+3. simplest cross-model pool
+4. market-anchored simple pool
+
+Sophisticated weighting is built only if it beats these on frozen OOS data (C9, E1). Prefer source
+diversity that measurably reduces residual correlation over vendor diversity that does not.
+
+---
+
+## Gate 3 — Execution realism
+
+> **STATUS: NOT RUN — blocked on having a candidate, not forgotten.** Class A was rejected (Look 3)
+> and the Class B scan produced no candidate across the full reachable open universe, so there is
+> nothing whose execution could be tested. **Quote persistence lives here**: nothing yet models a
+> counterparty withdrawing when hit, which is the usual reason a screen-visible arbitrage is not
+> executable, and it gates every candidate the scanner will ever produce.
+
+
+Replay against real book, fee, fill and settlement semantics.
+
+- PredictionMarketBench is the **reference implementation and smoke test**, not a certifier — four
+  Kalshi episodes cannot establish execution realism for another venue or category (D6).
+- Microstructure work on Polymarket sources trade direction from on-chain `OrderFilled` events, not
+  the public feed (~59% agreement).
+- A strategy intended for a venue ultimately requires that venue's historical replay.
+- Do **not** build a generic LOB simulator (E1, D6).
+
+---
+
+## Gate 4 — Capacity and economics
+
+> **STATUS: NOT RUN — blocked on Gate 3.** Capacity is a question about a strategy that survives
+> execution realism. Running it now would size something that does not exist (E1).
+
+
+`edge × fillable × frequency − costs` is a **Level-0 screening upper bound** (D3). It may kill a
+candidate; it may not certify one.
+
+- Do not annualise a short sample as though opportunity frequency were stationary. Label such
+  figures scenario estimates. The "$154/yr" Polymarket NBA figure is pedagogy, not a forecast.
+- A surviving candidate is re-expressed as a profit-versus-size curve `net_profit(size)`, because
+  fill price, impact, fill probability and edge decay are endogenous to deployed size.
+- Build that machinery only when a surviving candidate requires it (E1).
+- The hurdle is what the same effort earns elsewhere, not zero.
+
+---
+
+## Gate 5 — Paper forward test
+
+> **STATUS: NOT RUN — blocked on Gate 4.**
+
+
+Live prices, zero capital, frozen model and baseline. Sufficient independent events by the Gate 2
+criterion — not by elapsed days. A deadline is project management, not evidence.
+
+---
+
+## Gate 6 — Tiny bounded live mandate
+
+> **STATUS: NOT RUN, AND NOT REACHABLE.** F3 forbids live capital until every prior gate has passed
+> in order. Two of them have not been reached and one hypothesis class is rejected outright.
+
+
+Smallest fundable size. Kill switch armed before the first order. Sizing per `sizing.py`:
+uncertainty-shrunk fractional Kelly, hard caps, drawdown halt. No LLM in the order path (D5).
+
+---
+
+## Market-selection preconditions (apply at every gate)
+
+Exclude before any of the above:
+
+- Markets whose resolution a participant could economically move, absent an externally grounded
+  manipulation analysis — **fail closed** (D4, A6).
+- Ambiguous or dispute-prone resolution criteria.
+- Depth below intended size (D1).
+- Horizons where our latency makes the opportunity implausible (D2).
+- Longshots, where fee structure mechanically worsens post-fee returns.
+
+---
+
+## Execution order after the corrections in `CORRECTIONS.md`
+
+**Freeze feature work (E2).** In order:
+
+1. ~~Run the null-world falsification harness (Gate 0).~~ **DONE — PASSED.**
+2. ~~Run a raw-market forecasting adapter against Hindcast.~~ **NOT RUN.** Superseded: Gate 2a found
+   no channel for an LLM to add to, and Zhang et al. 2026 measured frontier models losing 16–31% of
+   real capital on these venues — leakage-free evidence at a fraction of Hindcast's cost.
+3. ~~Run the `q_ref` OOS ablation ladder (Gate 1).~~ **DONE — `q_ref` REJECTED.**
+4. ~~Run at least one genuinely contamination-resistant forecasting set.~~ **DONE — Look 3.**
+   1,966 fresh events, **Class A forecasting edge REJECTED.**
+5. Investigate structural arbitrage (Class B) as a separate non-forecasting hypothesis.
+   **IN PROGRESS — Gate B PASSED 2026-09-08; leg-set verification built and validated 2026-09-08.**
+   A scanner is licensed as a candidate generator, and the completeness hole Gate B identified is
+   closed ([`LEGSET-RESULTS.md`](LEGSET-RESULTS.md)).
+   ~~(a) extend the exhaustiveness sample~~ **DONE 2026-09-09 — 512 groups, bound 0.0059, floor ~1%.**
+   ~~(b) scan live open groups~~ ~~(c) order-book depth~~ **BOTH DONE 2026-09-09** —
+   [`SCANB-RESULTS.md`](SCANB-RESULTS.md). Depth is now the real ask book priced at VWAP-to-fill,
+   not a modelled field. First live scan: **no candidate**, and the binding constraint is
+   **structural** — 82% of live groups contain a leg that cannot be bought, so the set cannot be
+   assembled at any price. Of the 6 completable groups, all cost 3.4–16.3% more than the $1 they pay.
+
+   **Next:** (d) extend discovery beyond the top ~800 open markets by volume. The scan is
+   volume-ordered and shallow, and low-attention contracts are exactly where Sethi & Kline and
+   Abínzano et al. locate surviving mispricing — so the current null is strongest precisely where an
+   edge is least expected. (e) Quote persistence remains unmodelled and is Gate 3.
+6. **Report survivors and failures before adding code.**
+
+**Surviving hypotheses as of 2026-09-08: Class B only.** Class A is closed at this venue and scale.
+
+For every module proposed after this point: *what surviving experiment requires this?* If the answer
+is "a paper says we might need it later," do not build it (E1).
+
+Report: files changed, claims removed or renamed, test results, null-world results, Hindcast raw-`q`
+results, `q_ref` ablation results, surviving hypotheses, and **which code can now be deleted**.
+
+No broker integration, live capital, or production executor (F3).

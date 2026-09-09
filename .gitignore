@@ -1,0 +1,22 @@
+# Runtime state must live at $ORDO_KAIROS_STATE, outside C:/src (see kairos/state.py).
+# These entries are a second line of defence, not the primary one.
+state/
+*.jsonl
+.env
+.env.*
+*.key
+*.pem
+credentials*
+positions*
+pnl*
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Stray API probe dump, not an artifact of any registered run.
+pm.json
