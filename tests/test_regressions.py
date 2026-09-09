@@ -916,6 +916,46 @@ class TestPass24AlignmentGuards(unittest.TestCase):
         self.assertIn("CLEARS both venues", block)
 
 
+class TestPass25ClassCRegistration(unittest.TestCase):
+    """Pass 25. Class C is registered before it is built, and argues against itself."""
+
+    def _proto(self):
+        return (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+
+    def test_class_c_declares_a_status(self):
+        self.assertIn("## Class C", self._proto())
+        self.assertIn("STATUS: REGISTERED, NOT RUN", self._proto().split("## Class C")[1][:400])
+
+    def test_nothing_is_built_while_it_is_marked_not_run(self):
+        """Registration precedes the build, and this fails the moment that stops being true."""
+        proto = self._proto()
+        if "STATUS: REGISTERED, NOT RUN (2026-09-09)" not in proto.split("## Class C")[1][:400]:
+            return
+        for runner in ("gated.py", "scand.py"):
+            self.assertFalse((ROOT / runner).exists(),
+                             f"Class C is marked NOT RUN but {runner} exists - update the status")
+
+    def test_the_dead_on_arrival_check_precedes_the_build(self):
+        """Four crossings against two: the arithmetic that could refute the class for free."""
+        proto = self._proto()
+        self.assertIn("Gate D.0", proto)
+        self.assertIn("crosses four books", proto)
+        self.assertIn("refuted before it is built", proto)
+
+    def test_the_hedged_variant_is_the_registered_one(self):
+        """The unhedged variant is cheaper and cannot fail cleanly."""
+        proto = self._proto()
+        self.assertIn("The hedged variant is registered", proto)
+
+    def test_convergence_is_never_called_riskless(self):
+        proto = self._proto()
+        self.assertIn("Convergence is not arbitrage", proto)
+
+    def test_the_null_worlds_name_bid_ask_bounce(self):
+        """The false-positive generator must be named, not left as 'noise'."""
+        self.assertIn("bid-ask bounce", self._proto().lower())
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

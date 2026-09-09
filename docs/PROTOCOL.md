@@ -788,6 +788,151 @@ verdict is WITHHELD as underpowered — *"not enough evidence"*, never *"no effe
 
 ---
 
+## Class C — Cross-venue convergence, and Gate D
+
+> **STATUS: REGISTERED, NOT RUN (2026-09-09).** No price *history* has been fetched for any pair on
+> either venue. Nothing is built. Runs, in order: `python gated.py` (the DOA arithmetic), then
+> `python gated.py --nulls` (the convergence null gate), then `python scand.py` (the measurement).
+
+### Why this is a new class and not a rescue of Class B
+
+Class B cross-venue measured the cost of **buying YES on one venue and NO on the other and holding
+to settlement**: 117 priced pairs, zero clearing costs, median `-0.09579` (`-0.08338` at zero fees).
+
+That result does **not** refute the literature it was built on. Gebele et al. measure a *price gap at
+the touch*; this measured *the executable cost of a hedge held to resolution*. Both can be true: a
+persistent 2-4% gap can exist and be unreachable by a trade that crosses two books and then pays
+carry at both venues for a ~114-day median horizon.
+
+**Class C is the other way of trying to reach it:** enter on the gap, exit when it closes, never hold
+to settlement. It is a genuinely different hypothesis with genuinely different risk — **there is no
+riskless leg.** It requires the gap to actually converge, and it loses if the gap widens first. It
+must not inherit any of Class B's licences.
+
+### Gate D.0 — the dead-on-arrival check, which runs before anything is built
+
+**A convergence round trip crosses four books, not two.** Entry buys both legs; exit sells both.
+Class B's measurement bought two legs and let settlement pay the rest. So Class C pays *more*
+transaction cost and *less* carry, and it is only better if the carry saved exceeds the two extra
+crossings.
+
+Indicatively, from the Class B run: of the `0.0834` zero-fee cost, carry at 114 days accounts for
+roughly `0.019`, leaving about `0.065` of pure crossing cost for two legs. **Four crossings is
+therefore around `0.13`, against carry savings of at most `0.019`.** On those figures Class C is
+worse than the hypothesis that already failed.
+
+So Gate D.0 is registered as the **first** thing that runs, and it needs no time-series data at all:
+
+> **Measure, on the existing 140-pair alignment table, the full four-crossing round-trip cost and
+> the observed entry gap. If the largest observed gap does not exceed the median round-trip cost,
+> Class C is refuted and no convergence pipeline is built.**
+
+This is deliberately a cheap falsifier placed ahead of an expensive build. It is also the honest
+reading of the prior: **the arithmetic currently points against this hypothesis, and that is recorded
+here before the number is produced so it cannot later be presented as a surprise.**
+
+### The hypothesis, stated so it can fail
+
+> **H:** For cross-venue pairs verified fungible, conditional on the executable gap exceeding a
+> pre-registered entry threshold, the gap narrows enough within a pre-registered horizon to cover a
+> four-crossing round trip, with a positive median across pairs.
+
+### The variant, chosen and frozen
+
+Two forms exist and they are not interchangeable:
+
+| variant | crossings | isolates the gap? | exposure |
+|---|---|---|---|
+| **Hedged** — long the cheap leg, long the opposite side on the dear venue | 4 | yes | the gap only |
+| **Unhedged** — long the cheap leg alone, sell when it converges toward the other venue | 2 | no | the underlying event |
+
+**The hedged variant is registered.** The unhedged one is cheaper and is *not* a convergence test at
+all: it is a directional bet whose profit is dominated by whether the event happens, and a positive
+result from it would be uninterpretable. Choosing the cheaper instrument here would be choosing the
+one that cannot fail cleanly.
+
+### Gate D — the convergence null gate
+
+**The false-positive generator is bid-ask bounce.** Any two noisy price series will show apparent
+convergence after a large observed gap, because a large gap is partly measurement error and error
+mean-reverts by construction. A convergence detector that has not been shown to find nothing in
+uncorrelated noise is measuring its own sampling (A7).
+
+**Null worlds — every one contains no harvestable convergence, and must be refused:**
+
+1. **Independent random walks.** Two unrelated price paths with bid-ask noise. Any apparent gap
+   closure is bounce.
+2. **Common-factor with a permanent spread.** Both series track the same event, separated by a
+   constant structural offset that never closes — the venue-convention case Class B measured.
+3. **Convergence slower than the horizon.** A real mean-reverting spread whose half-life exceeds the
+   registered holding period, so the trade exits before the gap closes.
+4. **Convergence below costs.** A real, fast, mean-reverting spread whose amplitude is smaller than
+   the four-crossing round trip. The discriminating null: structure impeccable, only the arithmetic
+   says no.
+5. **Gap widens first.** A spread that converges eventually but breaches a stop en route. Tests that
+   the exit rule is priced, not assumed.
+
+**Positive control:** an injected mean-reverting spread with a half-life inside the horizon and an
+amplitude comfortably above the round trip. And — the lesson of AXIOMS G14 — **the control must be
+generated by a process the detector was not written against.** Gate C scored 1.000 power on its own
+parser's dialect and 0/26 on real text; a convergence control drawn from the same model as the
+detector would repeat that exactly.
+
+**Pass — both conditions, per unit, as every gate here:** no null world profits above chance on the
+exact binomial tail; the control is detected at least `POWER_FLOOR` of the time.
+
+### Frozen parameters
+
+| decision | value | why this |
+|---|---|---|
+| Entry threshold | executable gap > **2×** the measured four-crossing round trip | A threshold at 1× has zero margin for the gap widening before it closes |
+| Holding horizon | **7 days**, then exit at market regardless | Portnaya measures an AR(1) half-life of ~4h on a comparable wedge; 7 days is ~40 half-lives, so failure to converge inside it is a finding about the pair, not the window |
+| Stop | exit if the gap **doubles** against entry | Registered because null world 5 exists to test it |
+| Exit | gap closes to ≤ 25% of entry, **or** horizon, **or** stop — whichever first | Frozen so "hold a little longer" is unavailable after the fact |
+| Sizing | 25 contracts a side, curve over 5/10/25/50 | C11 |
+| Costs | four crossings, both venues, plus carry over the realised holding period | Carry is now *short*, which is the whole economic claim — so it must be measured, not assumed away |
+| alpha | 0.05 one-sided | Single pre-specified hypothesis |
+| Pair set | **only pairs whose price history has never been fetched** | See below |
+
+### Data discipline — the part most likely to be violated
+
+The 140-pair table's **snapshot** prices have been seen. Their **histories** have not. That
+distinction is thin, and it is exactly where a forking path would open, so:
+
+1. Class C selects pairs by the adjudicated alignment table **only** — never by their observed gap.
+2. The Class B snapshot may be used for the **cost arithmetic** (Gate D.0) and for nothing else. It
+   may not inform entry thresholds, pair selection, or horizon.
+3. Any pair whose history is fetched becomes **spent**. It may be used once. Re-running the
+   convergence test on the same histories after a failure is look #2 reported as look #1, which is
+   the defect Look 2 exists to document.
+
+### Stopping rule — binding
+
+Fetch history once, to the depth both APIs reach, and stop. Below **200 pairs with usable history on
+both venues**, the verdict is WITHHELD as underpowered — *"not enough evidence"*, never *"no
+effect"* (A1).
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Gate D.0 fails — the largest gap does not exceed the median round trip | **Class C is refuted before it is built.** No pipeline, no history fetched |
+| Gate D fails | No measurement runs. Fix the detector; do not tune the worlds (A8) |
+| Median convergence profit clears the four-crossing round trip on ≥ 200 pairs | A candidate class exists. Proceeds to Gate 3 (execution realism) — which for this class also has to model **the exit**, since a convergence trade that cannot be closed is an outright position |
+| Median does not clear | **Class C is concluded.** With Class A and Class B already rejected, that is the end of the registered programme |
+
+### What this does not cover, named now
+
+- **Convergence is not arbitrage.** There is no state of the world in which this position is
+  guaranteed whole. Nothing in Class C may be described as riskless at any point.
+- **Exit liquidity.** Gate 3. A gap that closes on a screen you cannot trade out of is not a profit.
+- **Adverse selection.** The gap may be wide *because* one venue knows something. Neither Gate D nor
+  the measurement can distinguish that from friction; only a resolved-outcome study can.
+- **Venue eligibility remains an operator precondition** this repo neither assumes nor asserts.
+- **F3 stands.** No broker integration, no live capital, no production executor.
+
+---
+
 ## Gate 1 — Does `q_ref` earn its existence?
 
 > **STATUS: RUN 2026-09-08 — `q_ref` REJECTED.** No transformation beat the raw quote on 731

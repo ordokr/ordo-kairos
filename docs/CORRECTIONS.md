@@ -8,6 +8,63 @@ Newest pass at the top.
 
 ---
 
+## Pass 25 - Class C (convergence) registered, with its own prior against it (2026-09-09)
+
+`docs/PROTOCOL.md` **Class C / Gate D**. Registered **before** anything was built and before any
+price *history* was fetched on either venue.
+
+### Why a new class rather than a rescue
+
+Class B cross-venue measured the cost of a hedge **held to settlement**: 117 pairs, zero clearing,
+median `-0.09579`. That does not refute the literature it was built on. Gebele et al. measure a price
+gap *at the touch*; we measured the executable cost of holding a two-leg hedge for a ~114-day median
+horizon. A persistent 2-4% gap can be real and still unreachable that way.
+
+Class C is the other route to it - enter on the gap, exit when it closes, never hold to settlement -
+and it is a different hypothesis with different risk. **There is no riskless leg.** It inherits none
+of Class B's licences.
+
+### The registration argues against itself, on purpose
+
+A convergence round trip crosses **four** books; the Class B trade crossed two and let settlement pay
+the rest. So Class C pays more transaction cost and less carry, and wins only if the carry saved
+exceeds two extra crossings. From the Class B run: of `0.0834` zero-fee cost, carry at 114 days is
+roughly `0.019`, leaving about `0.065` of crossing cost for two legs - so **four crossings is around
+`0.13` against carry savings of at most `0.019`.**
+
+On those figures Class C is *worse* than the hypothesis that already failed. That is written into the
+registration as **Gate D.0**, a dead-on-arrival check that runs first, needs no time-series data, and
+refutes the class outright if the largest observed gap does not exceed the median round trip.
+**Recording the adverse prior before producing the number is the point** - otherwise a negative
+result later gets presented as a surprise rather than as the expected outcome it was.
+
+### Two design choices that could have been made the convenient way
+
+- **Hedged, not unhedged.** The unhedged variant costs two crossings instead of four and would look
+  far better. It is also not a convergence test: its profit is dominated by whether the event
+  happens, so a positive result would be uninterpretable. The cheaper instrument is the one that
+  cannot fail cleanly, and it is refused.
+- **The control must come from a process the detector was not written against.** This is G14 applied
+  before the fact rather than after: Gate C scored power 1.000 against its own parser's dialect and
+  0/26 against real text, and a convergence control drawn from the detector's own model would repeat
+  that exactly.
+
+### The false-positive generator, named
+
+**Bid-ask bounce.** Any two noisy series show apparent convergence after a large observed gap,
+because a large gap is partly measurement error and error mean-reverts by construction. Five null
+worlds are registered against it, including the discriminating one - a real, fast, mean-reverting
+spread whose amplitude is simply smaller than the round trip.
+
+### Data discipline
+
+The 140-pair snapshot has been seen; the histories have not. That distinction is thin and is exactly
+where a forking path opens, so the snapshot is confined to the cost arithmetic and may not inform
+pair selection, entry threshold or horizon. **A pair whose history is fetched is spent** - usable
+once, never re-run after a failure.
+
+---
+
 ## Pass 24 - The alignment table produced FALSE PAIRS, and the measurement caught them (2026-09-09)
 
 `adjudicate.py`, `docs/alignment-groups.json`. Adjudication was scaled from 60 pairs to a 1,100-pair
