@@ -34,7 +34,7 @@ from typing import Sequence
 from .polymarket import _get_retry, cache_dir
 
 __all__ = ["Level", "Book", "Fill", "parse_book", "fetch_book", "fetch_book_result",
-           "cost_to_buy"]
+           "cost_to_buy", "proceeds_from_sell"]
 
 CLOB_BOOK = "https://clob.polymarket.com/book"
 
@@ -74,7 +74,11 @@ class Book:
 
 @dataclass(frozen=True)
 class Fill:
-    """The result of walking the ask book for a target size."""
+    """The result of walking one side of the book for a target size.
+
+    Used for both directions: ``vwap`` is the price paid when walking the asks and the price
+    received when walking the bids.
+    """
 
     vwap: float
     filled: float
@@ -172,12 +176,30 @@ def cost_to_buy(book: Book, size: float) -> Fill:
     ``vwap`` on a partial fill is the average over what *was* available, and is meaningless as an
     execution price — check :attr:`Fill.complete` before using it.
     """
+    return _walk(book.asks, size)
+
+
+def proceeds_from_sell(book: Book, size: float) -> Fill:
+    """Walk the **bid** book from the best price and return the VWAP received to sell ``size``.
+
+    The exit side of a round trip. Selling is not buying with the sign flipped — it consumes the
+    other side of the book and the price walks *down* — so a sell priced off the asks reports a
+    credit the seller would never receive.
+
+    Partial fills are returned rather than raised, for the same reason as :func:`cost_to_buy`: a
+    position that cannot be closed at size is a measurement the caller has to be able to refuse on.
+    """
+    return _walk(book.bids, size)
+
+
+def _walk(levels: Sequence[Level], size: float) -> Fill:
+    """Consume ``levels`` best-first until ``size`` is filled. Both sides are already normalised."""
     if size <= 0:
         raise ValueError(f"size must be positive, got {size!r}")
     remaining = size
     notional = 0.0
     consumed = 0
-    for level in book.asks:
+    for level in levels:
         if remaining <= 1e-9:
             break
         take = min(level.size, remaining)

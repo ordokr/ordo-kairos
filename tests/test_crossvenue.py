@@ -22,8 +22,10 @@ from kairos.crossvenue import (
     days_until,
     edge_from_vwaps,
     fill_pair,
+    gate_d0_verdict,
     kalshi_descriptor,
     polymarket_descriptor,
+    round_trip_cost,
 )
 from kairos.identity import compare_identities
 
@@ -201,6 +203,142 @@ class TestDeviation(unittest.TestCase):
         dev, why = best_direction(thin, thin, thin, thin, size=25.0, days=0.0, costs=CONSERVATIVE)
         self.assertIsNone(dev)
         self.assertIn("thin", why)
+
+
+def two_sided(ask, ask_size, bid, bid_size):
+    return Book(asks=(Level(ask, ask_size),), bids=(Level(bid, bid_size),))
+
+
+#: A pair quoted 0.40/0.38 on the leg bought YES and 0.55/0.53 on the leg bought NO.
+YES_LEG = two_sided(0.40, 100, 0.38, 100)
+NO_LEG = two_sided(0.55, 100, 0.53, 100)
+
+
+class TestFourCrossingRoundTrip(unittest.TestCase):
+    """Gate D.0's arithmetic. A convergence round trip crosses **four** books, not two.
+
+    Class B bought two legs and let settlement pay the rest. Class C buys two and sells two, so it
+    pays more transaction cost and less carry — and it is only better if the carry saved exceeds the
+    two extra crossings. The registration expects it does not, which is exactly why this arithmetic
+    must not be allowed to flatter itself.
+    """
+
+    def test_the_gross_gap_is_one_minus_both_ask_vwaps(self):
+        rt = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertAlmostEqual(rt.gross_gap, 1.0 - (0.40 + 0.55), places=9)
+
+    def test_the_cost_is_entry_all_in_less_what_the_exit_actually_receives(self):
+        rt = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        entry = (CONSERVATIVE.effective_yes_cost_at(0.40, 7.0)
+                 + CONSERVATIVE.effective_yes_cost_at(0.55, 7.0))
+        exit_ = ((0.38 - CONSERVATIVE.fee(0.38)) + (0.53 - CONSERVATIVE.fee(0.53)))
+        self.assertAlmostEqual(rt.entry_cost, entry, places=12)
+        self.assertAlmostEqual(rt.exit_proceeds, exit_, places=12)
+        self.assertAlmostEqual(rt.cost, entry - exit_, places=12)
+
+    def test_carry_is_charged_over_the_holding_horizon_not_to_resolution(self):
+        """AXIOMS C7, in the form that decides this class.
+
+        Class C's whole economic claim is that it holds for 7 days instead of to settlement. An
+        arithmetic that charged carry to resolution would erase the only advantage the hypothesis
+        has, and would refute it for the wrong reason.
+        """
+        short = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        long = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=114.0, costs=CONSERVATIVE)
+        self.assertLess(short.cost, long.cost, "a shorter hold must cost less carry")
+        base_yes = 0.40 + CONSERVATIVE.fee(0.40)
+        base_no = 0.55 + CONSERVATIVE.fee(0.55)
+        expected = ((CONSERVATIVE.carry(base_yes, 114.0) - CONSERVATIVE.carry(base_yes, 7.0))
+                    + (CONSERVATIVE.carry(base_no, 114.0) - CONSERVATIVE.carry(base_no, 7.0)))
+        self.assertAlmostEqual(long.cost - short.cost, expected, places=12)
+
+    def test_carry_is_not_charged_a_second_time_on_the_exit(self):
+        """The exit is a sale, not a holding. Charging carry there would double-count it."""
+        short = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        long = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=114.0, costs=CONSERVATIVE)
+        self.assertAlmostEqual(short.exit_proceeds, long.exit_proceeds, places=12,
+                               msg="exit proceeds must not depend on how long the position was held")
+
+    def test_a_round_trip_into_the_same_books_always_costs_money(self):
+        """Buying the ask and selling the bid at the same instant is a loss, never free."""
+        rt = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertGreater(rt.cost, 0.0)
+
+    def test_it_carries_the_traded_prices_so_the_longshot_exclusion_can_be_applied(self):
+        """PROTOCOL's market-selection preconditions exclude longshots **at every gate**.
+
+        ``price_in_band`` is enforced in ``kairos.gate`` and ``kairos.sizing`` and in no scanner, so
+        a caller measuring cross-venue prices has to apply it itself -- which it cannot do unless the
+        round trip reports what it actually traded at.
+        """
+        rt = round_trip_cost(YES_LEG, NO_LEG, size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertAlmostEqual(rt.yes_vwap, 0.40, places=9)
+        self.assertAlmostEqual(rt.no_vwap, 0.55, places=9)
+        self.assertTrue(CONSERVATIVE.price_in_band(rt.yes_vwap))
+
+    def test_a_longshot_leg_is_reported_at_its_traded_price_not_silently_dropped(self):
+        """The refusal is the caller's to make. Dropping it here would hide it from the census."""
+        rt = round_trip_cost(two_sided(0.02, 100, 0.01, 100), NO_LEG,
+                             size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertAlmostEqual(rt.yes_vwap, 0.02, places=9)
+        self.assertFalse(CONSERVATIVE.price_in_band(rt.yes_vwap))
+
+    def test_a_thin_leg_on_any_of_the_four_walks_is_a_named_refusal(self):
+        cases = {
+            "thin_yes_entry": (two_sided(0.40, 1, 0.38, 100), NO_LEG),
+            "thin_no_entry": (YES_LEG, two_sided(0.55, 1, 0.53, 100)),
+            "thin_yes_exit": (two_sided(0.40, 100, 0.38, 1), NO_LEG),
+            "thin_no_exit": (YES_LEG, two_sided(0.55, 100, 0.53, 1)),
+        }
+        for expected, (yes_leg, no_leg) in cases.items():
+            with self.subTest(expected):
+                out = round_trip_cost(yes_leg, no_leg, size=25, days_held=7.0, costs=CONSERVATIVE)
+                self.assertEqual(out, expected)
+
+    def test_an_exit_that_cannot_be_filled_is_refused_rather_than_priced_at_the_touch(self):
+        """A position that cannot be closed at size is an outright bet, not a convergence trade."""
+        out = round_trip_cost(two_sided(0.40, 100, 0.38, 1), NO_LEG,
+                              size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertIsInstance(out, str)
+
+
+class TestGateD0Verdict(unittest.TestCase):
+    """The registered decision rule: *if the largest observed gap does not exceed the median
+    round-trip cost, Class C is refuted and no convergence pipeline is built.*
+
+    The direction of this inequality decides a hypothesis class, so it is pinned rather than
+    trusted to prose.
+    """
+
+    def test_a_largest_gap_below_the_median_round_trip_refutes_the_class(self):
+        v = gate_d0_verdict(gaps=[0.01, 0.02, 0.03], round_trips=[0.10, 0.13, 0.16])
+        self.assertEqual(v.verdict, "REFUTED")
+        self.assertAlmostEqual(v.largest_gap, 0.03, places=12)
+        self.assertAlmostEqual(v.median_round_trip, 0.13, places=12)
+
+    def test_a_largest_gap_above_the_median_round_trip_does_not_refute(self):
+        v = gate_d0_verdict(gaps=[0.01, 0.20], round_trips=[0.10, 0.13, 0.16])
+        self.assertEqual(v.verdict, "NOT REFUTED")
+
+    def test_an_exactly_equal_gap_refutes_because_it_does_not_exceed(self):
+        v = gate_d0_verdict(gaps=[0.13], round_trips=[0.13])
+        self.assertEqual(v.verdict, "REFUTED")
+
+    def test_the_comparison_is_the_largest_gap_not_the_median_gap(self):
+        """Pinned because median-vs-median flips this case, and would be the natural slip."""
+        gaps, trips = [0.001, 0.001, 0.30], [0.10, 0.13, 0.16]
+        self.assertEqual(gate_d0_verdict(gaps=gaps, round_trips=trips).verdict, "NOT REFUTED")
+
+    def test_no_pairs_is_no_verdict_rather_than_a_refutation(self):
+        """AXIOMS A1. An empty measurement is 'not enough evidence', never 'no effect'."""
+        v = gate_d0_verdict(gaps=[], round_trips=[])
+        self.assertEqual(v.verdict, "NO VERDICT")
+        self.assertIsNone(v.largest_gap)
+        self.assertEqual(v.pairs, 0)
+
+    def test_gaps_without_any_priced_round_trip_is_also_no_verdict(self):
+        v = gate_d0_verdict(gaps=[0.05], round_trips=[])
+        self.assertEqual(v.verdict, "NO VERDICT")
 
 
 class TestBlocking(unittest.TestCase):

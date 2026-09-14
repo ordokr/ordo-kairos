@@ -924,16 +924,18 @@ class TestPass25ClassCRegistration(unittest.TestCase):
 
     def test_class_c_declares_a_status(self):
         self.assertIn("## Class C", self._proto())
-        self.assertIn("STATUS: REGISTERED, NOT RUN", self._proto().split("## Class C")[1][:400])
+        self.assertIn("STATUS: GATE D.0 RUN", self._proto().split("## Class C")[1][:400])
 
     def test_nothing_is_built_while_it_is_marked_not_run(self):
-        """Registration precedes the build, and this fails the moment that stops being true."""
-        proto = self._proto()
-        if "STATUS: REGISTERED, NOT RUN (2026-09-09)" not in proto.split("## Class C")[1][:400]:
-            return
-        for runner in ("gated.py", "scand.py"):
-            self.assertFalse((ROOT / runner).exists(),
-                             f"Class C is marked NOT RUN but {runner} exists - update the status")
+        """Registration precedes the build, and this fails the moment that stops being true.
+
+        Gate D.0 has run (Pass 26), so ``gated.py`` is licensed and the clause no longer names it.
+        ``scand.py`` is still governed: **Gate D.0 licenses Gate D at most, never the measurement**,
+        and Gate D has not been run. A convergence pipeline standing here before its null gate is
+        the A7 violation the whole protocol is built to prevent.
+        """
+        self.assertFalse((ROOT / "scand.py").exists(),
+                         "scand.py exists but Gate D (the convergence null gate) has not passed")
 
     def test_the_dead_on_arrival_check_precedes_the_build(self):
         """Four crossings against two: the arithmetic that could refute the class for free."""
@@ -954,6 +956,51 @@ class TestPass25ClassCRegistration(unittest.TestCase):
     def test_the_null_worlds_name_bid_ask_bounce(self):
         """The false-positive generator must be named, not left as 'noise'."""
         self.assertIn("bid-ask bounce", self._proto().lower())
+
+
+class TestPass26RegisteredExclusionsMustBeEnforcedOrReported(unittest.TestCase):
+    """Pass 26. Gate D.0's verdict flipped on a precondition no scanner in this repo enforces.
+
+    ``PROTOCOL.md`` excludes longshots *at every gate* and ``CostModel.price_in_band`` implements it,
+    but it is called only in ``kairos.gate`` and ``kairos.sizing``. 52 of 81 priced pairs were out of
+    band and the widest gap in the table sat on a market quoted at 3.8 cents, so the class is NOT
+    REFUTED unbanded and REFUTED banded.
+
+    The property this encodes is not "apply the band" — it is **a runner that renders a verdict a
+    registered exclusion would change must report both readings** rather than pick one silently.
+    """
+
+    def test_the_round_trip_reports_what_it_traded_at_so_the_band_can_be_applied(self):
+        from kairos.book import Book, Level
+        from kairos.costs import CONSERVATIVE
+        from kairos.crossvenue import round_trip_cost
+
+        def leg(ask, bid):
+            return Book(asks=(Level(ask, 100),), bids=(Level(bid, 100),))
+
+        longshot = round_trip_cost(leg(0.02, 0.01), leg(0.96, 0.95),
+                                   size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertFalse(CONSERVATIVE.price_in_band(longshot.yes_vwap),
+                         "a caller cannot apply the exclusion it cannot see")
+
+    def test_the_gate_d0_runner_applies_the_band_and_reports_the_disagreement(self):
+        src = (ROOT / "gated.py").read_text(encoding="utf-8")
+        self.assertIn("price_in_band", src, "gated.py renders a verdict without the exclusion")
+        self.assertIn("THE TWO DISAGREE", src,
+                      "gated.py must surface a banded/unbanded split rather than pick one")
+
+    def test_the_scanners_that_do_not_enforce_it_are_still_the_ones_recorded(self):
+        """Anti-drift in the awkward direction: enforcing it later is fine, *silently* is not.
+
+        Pass 26 records that ``scanb.py`` and ``scanc.py`` measured their nulls without this
+        exclusion. If a later session adds it, their recorded results no longer describe the code
+        that produced them — so this fails and forces the record to be updated with the re-run.
+        """
+        for scanner in ("scanb.py", "scanc.py"):
+            self.assertNotIn("price_in_band", (ROOT / scanner).read_text(encoding="utf-8"),
+                             f"{scanner} now enforces the longshot band, but CORRECTIONS.md Pass "
+                             f"26.1 still records that it does not - update the record and say "
+                             f"whether the recorded null was re-measured")
 
 
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):

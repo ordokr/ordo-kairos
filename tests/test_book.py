@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from kairos.book import Book, Fill, Level, cost_to_buy, parse_book
+from kairos.book import Book, Fill, Level, cost_to_buy, parse_book, proceeds_from_sell
 from kairos.costs import CONSERVATIVE
 
 RAW = {
@@ -94,6 +94,54 @@ class TestCostToBuyWalksTheBook(unittest.TestCase):
         for bad in (0, -1):
             with self.assertRaises(ValueError):
                 cost_to_buy(parse_book(RAW), bad)
+
+
+class TestProceedsFromSellWalksTheBidBook(unittest.TestCase):
+    """The exit side of a round trip. Class C sells both legs; nothing here walked a bid book.
+
+    Selling is not buying with the sign flipped: it consumes the *other* side, and the price walks
+    **down** rather than up. A sell priced off the ask book would report the exit as a credit it
+    would never receive.
+    """
+
+    def test_a_small_order_receives_only_the_best_bid(self):
+        f = proceeds_from_sell(parse_book(RAW), 5)
+        self.assertTrue(f.complete)
+        self.assertAlmostEqual(f.vwap, 0.30, places=9)
+        self.assertEqual(f.levels_consumed, 1)
+
+    def test_a_larger_order_walks_down_and_receives_less(self):
+        small = proceeds_from_sell(parse_book(RAW), 5)
+        large = proceeds_from_sell(parse_book(RAW), 75)
+        self.assertTrue(large.complete)
+        # 50@0.30 + 25@0.10 = 17.5 over 75 contracts
+        self.assertAlmostEqual(large.vwap, 17.5 / 75.0, places=9)
+        self.assertLess(large.vwap, small.vwap, "depth must receive less, not more")
+
+    def test_it_walks_the_bids_and_not_the_asks(self):
+        """The defect this guards is a sell priced off the ask book, which reads as a credit."""
+        sell = proceeds_from_sell(parse_book(RAW), 5)
+        buy = cost_to_buy(parse_book(RAW), 5)
+        self.assertAlmostEqual(sell.vwap, 0.30, places=9)
+        self.assertAlmostEqual(buy.vwap, 0.40, places=9)
+        self.assertLess(sell.vwap, buy.vwap, "you sell at the bid and buy at the ask, never both")
+
+    def test_a_book_too_thin_reports_a_partial_fill_rather_than_a_better_price(self):
+        f = proceeds_from_sell(parse_book(RAW), 10_000)
+        self.assertFalse(f.complete)
+        self.assertAlmostEqual(f.filled, 150.0, places=9,
+                               msg="a too-large order consumes the whole bid book, no more")
+
+    def test_an_empty_bid_book_fills_nothing(self):
+        f = proceeds_from_sell(parse_book({"asks": [{"price": "0.5", "size": "99"}], "bids": []}), 25)
+        self.assertFalse(f.complete)
+        self.assertEqual(f.filled, 0.0)
+        self.assertNotEqual(f.vwap, f.vwap, "vwap of nothing is NaN, not zero")
+
+    def test_zero_or_negative_size_is_refused(self):
+        for bad in (0, -1):
+            with self.assertRaises(ValueError):
+                proceeds_from_sell(parse_book(RAW), bad)
 
 
 class TestCrossedPriceIsNotChargedSpreadTwice(unittest.TestCase):

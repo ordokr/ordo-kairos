@@ -30,7 +30,10 @@ import json
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
-from .book import Book, cost_to_buy
+from statistics import median
+from typing import Sequence
+
+from .book import Book, cost_to_buy, proceeds_from_sell
 from .costs import CostModel
 from .identity import (
     ParsedIdentity,
@@ -50,6 +53,10 @@ __all__ = [
     "fill_pair",
     "edge_from_vwaps",
     "best_direction",
+    "RoundTrip",
+    "round_trip_cost",
+    "GateD0",
+    "gate_d0_verdict",
 ]
 
 
@@ -337,3 +344,98 @@ def best_direction(poly_yes: Book, poly_no: Book, kalshi_yes: Book, kalshi_no: B
         if best is None or edge > best.edge:
             best = Deviation(size, edge, name, yes_vwap, no_vwap)
     return best, "ok" if best else ("|".join(reasons) or "no_book")
+
+
+# ---------------------------------------------------------------------------
+# Gate D.0 — the four-crossing round trip
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RoundTrip:
+    """What it costs to cross into a hedged pair and straight back out of it.
+
+    Class B bought two legs and let settlement pay the rest; Class C buys two and sells two, so it
+    pays two extra crossings to save carry. ``cost`` is that trade stated as one number.
+    """
+
+    size: float
+    days_held: float
+    #: ``1 - (both ask VWAPs)`` — the deviation before any cost, and the most a converging gap can
+    #: ever hand back. Gross on purpose: it is the quantity the round trip has to be compared *to*.
+    gross_gap: float
+    entry_cost: float
+    exit_proceeds: float
+    #: What the entry actually traded at. Reported rather than acted on: the longshot exclusion is
+    #: registered as a market-selection precondition and no scanner in this repo enforces it, so a
+    #: caller has to be able to apply it -- and to count what it excluded.
+    yes_vwap: float
+    no_vwap: float
+
+    @property
+    def cost(self) -> float:
+        return self.entry_cost - self.exit_proceeds
+
+
+def round_trip_cost(yes_book: Book, no_book: Book, *, size: float, days_held: float,
+                    costs: CostModel) -> RoundTrip | str:
+    """Four crossings — buy both legs, sell both legs — or a named refusal.
+
+    **Carry is charged once, on the entry capital, over ``days_held``** (AXIOMS C7). Not to
+    resolution: holding for a week instead of to settlement is Class C's entire economic claim, and
+    charging settlement carry here would refute the hypothesis for a reason the hypothesis does not
+    assert. The exit is a sale rather than a holding, so it pays the taker fee and no carry.
+
+    A leg that cannot be *closed* at size is refused rather than priced at the touch. A convergence
+    trade that cannot be exited is an outright position on the event, which is the one thing this
+    hypothesis is not (AXIOMS D1).
+    """
+    walks = (
+        ("thin_yes_entry", cost_to_buy(yes_book, size)),
+        ("thin_no_entry", cost_to_buy(no_book, size)),
+        ("thin_yes_exit", proceeds_from_sell(yes_book, size)),
+        ("thin_no_exit", proceeds_from_sell(no_book, size)),
+    )
+    for name, fill in walks:
+        if not fill.complete:
+            return name
+    (_, entry_yes), (_, entry_no), (_, exit_yes), (_, exit_no) = walks
+    return RoundTrip(
+        size=size,
+        days_held=days_held,
+        gross_gap=1.0 - (entry_yes.vwap + entry_no.vwap),
+        entry_cost=(costs.effective_yes_cost_at(entry_yes.vwap, days_held)
+                    + costs.effective_yes_cost_at(entry_no.vwap, days_held)),
+        exit_proceeds=((exit_yes.vwap - costs.fee(exit_yes.vwap))
+                       + (exit_no.vwap - costs.fee(exit_no.vwap))),
+        yes_vwap=entry_yes.vwap,
+        no_vwap=entry_no.vwap,
+    )
+
+
+@dataclass(frozen=True)
+class GateD0:
+    verdict: str                       # "REFUTED" | "NOT REFUTED" | "NO VERDICT"
+    largest_gap: float | None
+    median_round_trip: float | None
+    pairs: int
+
+
+def gate_d0_verdict(*, gaps: Sequence[float], round_trips: Sequence[float]) -> GateD0:
+    """``docs/PROTOCOL.md`` Gate D.0, as registered:
+
+    *If the largest observed gap does not exceed the median round-trip cost, Class C is refuted and
+    no convergence pipeline is built.*
+
+    The **largest** gap against the **median** cost, deliberately: the comparison is deck-stacked in
+    the hypothesis's favour, so a refutation here cannot be blamed on a harsh test. *Does not
+    exceed* means equality refutes.
+
+    With nothing priced there is no verdict at all — an empty measurement is "not enough evidence",
+    never "no effect" (AXIOMS A1), and a rule that returned REFUTED on zero pairs would refute the
+    class every time both venues' books failed to load.
+    """
+    if not gaps or not round_trips:
+        return GateD0("NO VERDICT", None, None, len(round_trips))
+    largest, med = max(gaps), median(round_trips)
+    return GateD0("REFUTED" if largest <= med else "NOT REFUTED", largest, med, len(round_trips))

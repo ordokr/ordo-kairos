@@ -790,9 +790,24 @@ verdict is WITHHELD as underpowered — *"not enough evidence"*, never *"no effe
 
 ## Class C — Cross-venue convergence, and Gate D
 
-> **STATUS: REGISTERED, NOT RUN (2026-09-09).** No price *history* has been fetched for any pair on
-> either venue. Nothing is built. Runs, in order: `python gated.py` (the DOA arithmetic), then
-> `python gated.py --nulls` (the convergence null gate), then `python scand.py` (the measurement).
+> **STATUS: GATE D.0 RUN 2026-09-14 — SPLIT VERDICT. Class C is NOT refuted as measured, and IS
+> refuted inside the registered tradeable band.** 140 aligned pairs, 81 priced at 25 contracts a
+> side. Unbanded: largest gap `+0.09775` against a median four-crossing round trip of `0.02824`, so
+> the falsifier does not fire. Banded: **52 of the 81 priced pairs are longshots** the
+> market-selection preconditions exclude at every gate, and on the 29 that remain the largest gap is
+> `+0.05000` against a median round trip of `0.08638` — refuted. The widest gap in the whole table
+> sits on a pair quoted at 3.8 cents.
+>
+> **The verdict therefore turns on a precondition no scanner in this repo has ever enforced**
+> (`price_in_band` lives in `kairos.gate` and `kairos.sizing` only — `scanb.py` and `scanc.py` do not
+> apply it either). Both readings are reported; neither is chosen here. See
+> [`GATED-RESULTS.md`](GATED-RESULTS.md) and `CORRECTIONS.md` Pass 26.
+>
+> No price *history* has been fetched for any pair on either venue, so **no pair is spent**. The
+> convergence pipeline is **not** built: Gate D.0 licenses Gate D (the null gate) at most, and the
+> banded reading does not license even that. Runs, in order: `python gated.py` (the DOA arithmetic),
+> then `python gated.py --nulls` (the convergence null gate), then `python scand.py` (the
+> measurement).
 
 ### Why this is a new class and not a rescue of Class B
 
@@ -1094,10 +1109,16 @@ Exclude before any of the above:
    **structural** — 82% of live groups contain a leg that cannot be bought, so the set cannot be
    assembled at any price. Of the 6 completable groups, all cost 3.4–16.3% more than the $1 they pay.
 
-   **Next:** (d) extend discovery beyond the top ~800 open markets by volume. The scan is
+   ~~**Next:** (d) extend discovery beyond the top ~800 open markets by volume. The scan is
    volume-ordered and shallow, and low-attention contracts are exactly where Sethi & Kline and
    Abínzano et al. locate surviving mispricing — so the current null is strongest precisely where an
-   edge is least expected. (e) Quote persistence remains unmodelled and is Gate 3.
+   edge is least expected.~~ **WITHDRAWN 2026-09-14 — already satisfied when it was written.**
+   `scanb.open_neg_risk_markets` sweeps **both** volume orderings across the whole offset-reachable
+   universe, and `SCANB-RESULTS.md` records it. The genuine remaining limit is different: Gamma's
+   `offset` caps at 2100, so the sweep reaches the universe *offset pagination* reaches, not the
+   venue. Past it needs date-windowed discovery for open markets, as Look 3 built for closed ones —
+   **not registered, not licensed.** See `CORRECTIONS.md` Pass 26.4.
+   (e) Quote persistence remains unmodelled and is Gate 3.
 6. **Report survivors and failures before adding code.**
 
 **Surviving hypotheses as of 2026-09-08: Class B only.** Class A is closed at this venue and scale.

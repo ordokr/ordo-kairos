@@ -8,6 +8,71 @@ Newest pass at the top.
 
 ---
 
+## Pass 26 — Gate D.0 run; a registered exclusion that no scanner enforces (2026-09-14)
+
+Gate D.0 ran as registered on the 140-pair alignment table. Result and full limitations in
+[`GATED-RESULTS.md`](GATED-RESULTS.md); what belongs here is the four things it got wrong or found
+wrong, none of which were visible before the arithmetic was actually walked off real books.
+
+### 26.1 The longshot exclusion is registered "at every gate" and enforced by no scanner
+
+`PROTOCOL.md` **Market-selection preconditions** exclude longshots at every gate, and
+`CostModel.price_in_band` implements it. It is called in `kairos/gate.py` and `kairos/sizing.py`
+**and in no scanner at all** — not `gated.py` as first written, and **not `scanb.py` or `scanc.py`**,
+whose results are already recorded.
+
+It decides this gate. Of 81 pairs priced at 25 contracts a side, **52 are out of band**, and the
+single widest gap in the table sits on a market quoted at **3.8 cents**. Unbanded the class is NOT
+REFUTED; banded, on the 29 survivors, it is REFUTED.
+
+**Not resolved by picking one.** The banded reading is what the protocol says; the unbanded reading
+is what every prior Class B measurement here actually did, so substituting it silently would make
+this run non-comparable with the result it exists to be compared against — and choosing after seeing
+both is the A8 move. `gated.py` reports both and says which is which.
+
+**The status of `scanb.py` and `scanc.py` is flagged, not changed.** Re-running either is a new look
+at a hypothesis whose alpha is spent, and it is not licensed by this pass. What is recorded is that
+their nulls were measured **without** an exclusion the protocol requires — and since the exclusion
+removes the cheap-looking longshots that drag a median down, its absence made those nulls *more*
+likely to find something, not less. A null measured on a superset is still a null.
+
+### 26.2 The first Gate D.0 run had no band, and its verdict is on the record
+
+The band check was absent from the first execution, which reported a bare `NOT REFUTED` on largest
+gap `+0.09775` against median round trip `0.02824`. Found by inspecting the pairs behind the
+headline, not by a test.
+
+Recorded rather than quietly patched **because the fix moved the verdict toward the outcome the
+registration predicted.** A correction that produces the expected answer deserves more scrutiny than
+one that produces a surprise, not less, and the way to keep it honest is to publish the pre-fix
+number next to the post-fix one.
+
+### 26.3 The registration's own cost estimate was wrong by a factor of four, in its own favour
+
+Class C's registration put four crossings "around `0.13`" by extrapolating from Class B's `0.0834`
+zero-fee hold-to-settlement cost. **Measured: `0.02824`.** The extrapolation subtracted one modelled
+quantity from another and treated the remainder as a crossing cost; walking four real books gives a
+number four times smaller.
+
+The lesson is not that the prior was adverse — being adverse was the point. It is that **an
+arithmetic sketch inside a registration is not a measurement**, and Gate D.0 was worth running
+precisely because it could contradict the registration that created it. Had the sketch been trusted,
+Class C would have been refuted on a number that is wrong.
+
+### 26.4 A stale instruction in the execution order, withdrawn
+
+PROTOCOL's execution order still listed as the next Class B step: *"extend discovery beyond the top
+~800 open markets by volume."* `scanb.open_neg_risk_markets` already sweeps **both** volume
+orderings across the whole offset-reachable universe, and `SCANB-RESULTS.md` records it. The
+instruction was satisfied before it was read.
+
+**Withdrawn.** The genuine remaining limit is different and is named in `SCANB-RESULTS.md`: Gamma's
+`offset` caps at 2100, so the sweep covers the universe *offset pagination can reach*, not the
+venue. Getting past it needs date-windowed discovery for open markets, as Look 3 built for closed
+ones. That is **not** licensed by this pass and is not registered.
+
+---
+
 ## Pass 25 - Class C (convergence) registered, with its own prior against it (2026-09-09)
 
 `docs/PROTOCOL.md` **Class C / Gate D**. Registered **before** anything was built and before any
