@@ -1092,6 +1092,43 @@ class TestPass28ADecisionRuleMustStateItsWeighting(unittest.TestCase):
         self.assertIn("upper bound", doc)
 
 
+class TestPass29NullWorldsMustMatchTheRegimeTheyValidate(unittest.TestCase):
+    """Pass 29. Gate M's null worlds traded every step; the real series is 95.7% stale.
+
+    Measured on real Polymarket history before the verdict was believed: 95.7% of minute-to-minute
+    prices unchanged, 59.6% of contributions exactly zero. The estimator had been validated on a
+    process the data does not resemble — the same G14 failure Gate C committed with power 1.000 on
+    its own parser's dialect and 0/26 on real text.
+    """
+
+    def test_the_estimator_still_separates_the_worlds_at_the_measured_staleness(self):
+        import gatem
+        from kairos.microstructure import realized_half_spread
+
+        common = dict(half_spread=0.01, vol=0.0, drift=0.0, stale=0.957)
+        uninformed = gatem.synthetic_market(60_000, informed_frac=0.0, impact=0.0, seed=4, **common)
+        informed = gatem.synthetic_market(60_000, informed_frac=1.0, impact=0.02, seed=4, **common)
+        self.assertGreater(realized_half_spread(uninformed, 60), 0.005,
+                           "a surviving spread must still be visible through the staleness")
+        self.assertLess(realized_half_spread(informed, 60), 0.0,
+                        "and a loss must still read as a loss")
+
+    def test_the_stale_worlds_are_in_the_gated_set_not_just_available(self):
+        """A world that exists but is never run validates nothing."""
+        import gatem
+
+        names = [name for name, _, _ in gatem.WORLDS]
+        self.assertTrue(any("STALE" in n for n in names),
+                        "the regime the measurement runs in must be among the gated worlds")
+        self.assertTrue(any("STALE" in n and truth for n, _, truth in gatem.WORLDS))
+        self.assertTrue(any("STALE" in n and not truth for n, _, truth in gatem.WORLDS))
+
+    def test_the_measurement_states_that_its_bias_flatters_the_maker(self):
+        """The direction of the known bias decides which verdict deserves suspicion."""
+        src = (ROOT / "scanm.py").read_text(encoding="utf-8").lower()
+        self.assertIn("flatters the maker", src)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

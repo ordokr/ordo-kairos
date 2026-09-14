@@ -1243,6 +1243,200 @@ If this gate is reported as evidence that market making is profitable, it has be
 | Tick room exists, ceiling below 10x | **REFUTED.** The structural change did not change the structure |
 | Nothing prices | WITHHELD as apparatus (A1, G12) |
 
+### Gate M — Adverse selection and queue position
+
+> **REGISTERED 2026-09-14, before the estimator was written and before any price history was
+> fetched for any market in the measured set.** Runs, in order: `python gatem.py --nulls` (the null
+> gate), then `python scanm.py` (the measurement).
+>
+> **STATUS: NULL GATE PASSED, MEASUREMENT RUN 2026-09-14 — NOT REFUTED, AND THE MAGNITUDE OUTRANKS
+> THE VERDICT.** Seven null worlds, all PASS, including two at the **95.7% staleness** the real
+> series was measured to have. 237 markets, 276,421 pooled observations.
+>
+> `R(60) = +0.00039`, interval `[+0.00023, +0.00056]` — strictly above zero, so the spread survives.
+> Against a median quoted half-spread of `+0.01000` that is **3.9% retained, 96.1% taken by informed
+> flow**. The same estimator on an *uninformed* world at the same staleness returns `+0.00928`, so
+> the instrument can see a surviving spread; it is not seeing one here.
+>
+> Gate M.0's `$29.28M/yr` gross ceiling becomes **~$1.14M/yr** net, at a 100% capture rate that is
+> impossible when incumbents hold 77.4% of flow at one tick. **The tick test attenuates toward zero,
+> which flatters the maker, so NOT REFUTED is the less trustworthy of the two verdicts here.**
+>
+> Proceeds to Gate 3, whose content for this class is **queue position** — nothing here measures
+> whether the fills would arrive. See [`SCANM-RESULTS.md`](SCANM-RESULTS.md) and `CORRECTIONS.md`
+> Pass 29.
+
+Gate M.0 established that there is a market to compete in. **This gate asks whether an entrant
+would win, and it is the one that decides.** A 3.26% gross spread per dollar of flow is what a maker
+collects *if the flow is uninformed*; the whole business of market making is that it is not.
+
+#### The hypothesis, stated so it can fail
+
+> **H:** On in-band markets with tick room, the half-spread a maker captures exceeds the signed
+> permanent price impact suffered over the horizon an entrant's inventory would be held.
+
+Failing means informed flow takes more than the spread pays — which is the default expectation for
+an entrant with no queue priority, no latency advantage and no flow-internalisation.
+
+#### Decision-rule specification — units, weighting, preconditions
+
+*Written first, per `CORRECTIONS.md` Pass 28.2. Three gates in a row shipped a correct measurement
+under a decision rule that was dimensionally wrong, mis-weighted, or silently dropped a standing
+precondition. That rule is applied here before anything else is decided.*
+
+| element | value |
+|---|---|
+| **Units of the threshold** | price units per contract, both sides. `half_spread` and `impact` are the same quantity in the same units, so the comparison is dimensionless and no rate/magnitude confusion is possible |
+| **Weighting of the statistic** | **flow-weighted across markets**, and reported unweighted beside it. Gate M.0's defect was weighting markets when the hypothesis was about flow; the same hypothesis is at stake here |
+| **Standing preconditions applied** | `price_in_band` (longshot exclusion, Pass 26.1); tick room > 1 tick (Gate M.0 — a market an entrant cannot quote in is not in the population); minimum observation count per market |
+| **Primary statistic** | signed permanent impact at the registered horizon, **net of the bounce component**, versus half the quoted spread |
+| Horizon | **60 minutes**, with the term structure at 1/5/15/60 reported. Frozen because the shape across horizons is what separates bounce from information |
+| alpha | not applicable — this is a deterministic comparison of two measured price quantities, not a significance test. No alpha is spent |
+
+#### The estimator, and why direction is inferred rather than read
+
+Adverse selection is `D_t x (p_{t+k} - p_t)`, where `D_t` is trade direction. Direction is the hard
+part and this venue makes it harder:
+
+- **The public feed's own direction flag is refuted as a source.** Dubach 2026 measured it matching
+  on-chain truth **~59%** of the time (AXIOMS D6). Using it would produce a biased impact estimate
+  from a coin flip.
+- **On-chain `OrderFilled` is ground truth** and requires an RPC, log decoding and a new dependency.
+  Out of proportion for a gate that can be refuted more cheaply.
+- **The tick test** infers direction from the price series alone and is a published method with a
+  known error mode. It is what this gate uses, and its weakness is registered here rather than
+  discovered later: `D_t` is computed from `p_t - p_{t-1}`, so `D_t` and the subsequent move are
+  **mechanically correlated through bid-ask bounce**, biasing impact upward at short horizons.
+
+**That bias is the whole reason the term structure is the statistic rather than a single number.**
+Bounce is transient and mean-reverting, so a bounce-driven impact **decays** as the horizon grows.
+Information is permanent, so an information-driven impact **persists**. The shape across 1/5/15/60
+minutes separates them; a single-horizon number cannot, and would measure the instrument.
+
+> #### Amendment 2026-09-14 — the statistic is the realized half-spread, and the sign above is wrong
+>
+> **Recorded before the estimator was run on any real or synthetic data**, found while writing it.
+>
+> Two errors in the paragraphs above. Working the pure-bounce case explicitly: with a constant true
+> value `V`, bid `V - s/2` and ask `V + s/2`, a trade at the ask gives `D = +1` and
+> `E[p_{t+k}] = V` for **every** `k`, so `E[D (p_{t+k} - p_t)] = -s/2` at every horizon.
+>
+> 1. **The bounce bias does not decay with the horizon.** It is a constant `-s/2` offset, because it
+>    comes from `p_t` sitting on one side of the spread, not from noise in `p_{t+k}`. The registered
+>    premise that the term structure separates bounce from information *by decay* is false for this
+>    estimator.
+> 2. **The sign was backwards.** Bounce biases measured impact **downward** — toward making the maker
+>    look more profitable — which is the dangerous direction for a gate whose pass licenses more
+>    spend, not the harmless one the registration assumed.
+>
+> **The fix is to measure the quantity the question is actually about.** Negating it gives the
+> standard **realized half-spread**:
+>
+> ```
+> R(k) = mean over trades of  D_t x (p_t - p_{t+k})
+> ```
+>
+> In pure bounce `R(k) = +s/2`: the maker keeps the half-spread, which is the correct answer rather
+> than a bias to be corrected. Under informed flow the price moves *with* the trade, so `R(k)` falls
+> and can go negative — the maker pays. **`R(k)` already nets gross capture against adverse
+> selection**, so no separation of bounce from information is required, and `E[p_{t+k}] = m_{t+k}`
+> under uninformed flow makes the traded price an unbiased stand-in for the unpublished midquote.
+>
+> Adverse selection is then reported as the decomposition `quoted_half_spread - R(k)` rather than
+> estimated directly.
+>
+> **The term structure is retained, with its role corrected**: it no longer separates bounce from
+> information, it shows **how fast information arrives**. `R` flat in `k` means uninformed flow;
+> `R` declining in `k` means the fills are informed and the horizon decides how much it costs.
+>
+> **The primary statistic and the decision rule below are restated accordingly:** flow-weighted
+> `R(60)` versus zero, with `R(60) <= 0` refuting. Comparing `R` to the half-spread would
+> double-count, since `R` is already net. Everything else in this registration — null worlds,
+> preconditions, weighting, stopping rule, horizon — stands unchanged.
+
+#### The null gate — runs first, always
+
+**The false-positive generator is bid-ask bounce**, exactly as Gate D registered for convergence. An
+estimator that has not been shown to find nothing in a world of pure bounce is measuring its own
+sampling (A7).
+
+> #### Amendment 2026-09-14 (second) — the null worlds were labelled for the replaced statistic
+>
+> **Recorded before the null gate was run.** The amendment above changed the statistic from signed
+> impact to `R`, and the worlds below were written for the statistic it replaced. Under `R` they are
+> mislabelled: a pure-bounce world returns `R = +s/2`, not `~0`, because **a maker in a bounce-only
+> world genuinely profits**. "No harvestable adverse selection" is not the null for this gate — it is
+> the *success* case.
+>
+> **The correct mapping.** The claim under test is maker profitability, so:
+>
+> | world contains | estimator must report | role |
+> |---|---|---|
+> | **informed flow** (the spread is taken) | `R <= 0` | **null** — a false `R > 0` here licenses spend on a losing strategy, which is the dangerous direction |
+> | **uninformed flow** (the spread is kept) | `R ~ +s/2` | **power** — an estimator reporting losses everywhere refutes everything and is worth nothing |
+>
+> The worlds listed below are retained, **re-assigned to the power side**, and three informed-flow
+> nulls are added: permanent impact above the spread, impact exactly at break-even (the
+> discriminating case), and a toxic-minority burst, which is the realistic shape.
+>
+> **This is the fourth decision-rule defect in four gates** (Passes 26.1, 27.1, 28.1, and this),
+> against zero measurement defects. It is further evidence for Pass 28.2 rather than an exception to
+> it, and it was caught by the rule that pass extracted.
+
+**Null worlds — reassigned to the power side by the amendment above; uninformed flow, where the
+maker keeps the spread and the estimator must report `R ~ +s/2`:**
+
+1. **Pure bounce.** A constant true value; the observed price alternates bid/ask. Any measured impact
+   is mechanical. *The discriminating null* — structure impeccable, only the estimator's own
+   correlation between `D_t` and the next move stands between it and a false fire.
+2. **Random walk, no bounce.** Fills are unbiased; impact must be zero at every horizon.
+3. **Random walk plus bounce.** Both mechanisms at once, which is the realistic shape of an
+   uninformed market.
+4. **Drifting market, uninformed flow.** A genuine trend that trades do **not** predict. Tests that
+   the estimator does not read trend as adverse selection.
+5. **Wide spread, no information.** Bounce amplitude large relative to the drift, so the naive
+   estimator fires hardest here.
+
+**Positive control:** a series with genuinely informed flow — trades that systematically precede a
+permanent move. **Generated by a process the estimator was not written against** (AXIOMS G14): Gate
+C scored power 1.000 on its own parser's dialect and 0/26 on real text, and a control drawn from the
+estimator's own model would repeat that exactly.
+
+**Exhibit:** the naive single-horizon estimator at k=1 on raw trade prices, retained because the size
+of its failure is the argument for the term structure.
+
+**Pass — both conditions, per unit, as every gate here:** no null world's measured impact exceeds
+chance at the registered horizon, **and** the informed control is detected at least `POWER_FLOOR` of
+the time. An estimator that reports zero everywhere passes the first trivially.
+
+#### Stopping rule — binding
+
+Sample the in-band, tick-room universe **once**, to the depth the API reaches, and stop. Do not widen
+it because the result disappoints. Below **100 markets with usable history**, the verdict is WITHHELD
+as underpowered — *"not enough evidence"*, never *"no effect"* (A1).
+
+#### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Flow-weighted `R(60)` **at or below zero** | **REFUTED. Class M closes, and with Classes A, B and C already closed, the registered programme ends.** Informed flow takes at least the whole spread, which is the entrant's default condition |
+| Flow-weighted `R(60)` **above zero**, on ≥ 100 markets | A maker edge is **not excluded** at this venue. Proceeds to Gate 3 (execution realism), which for this class must model queue position — the thing that decides whether the fills arrive at all |
+| Gate M's null gate fails | No measurement runs. Fix the estimator; do not tune the worlds (A8) |
+| Fewer than 100 markets | WITHHELD |
+
+#### What this gate does not cover, named now
+
+- **Queue position is not measured.** A favourable spread you never get filled at is not revenue.
+  This gate measures the cost of the fills you *do* get, not the probability of getting them.
+- **Polymarket's maker rewards are excluded**, and cut for. A REFUTED verdict refutes spread capture
+  against informed flow, not rewards farming, which is a different hypothesis with a different
+  revenue source.
+- **Inventory and competitive response are unmodelled**, and cut against.
+- **The tick test is not ground truth.** On-chain `OrderFilled` is, and is not used here.
+- **Trade prices are not midquotes.** Historical quotes are not published, so the series is what
+  traded, and that is the source of the bounce bias the term structure exists to handle.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
 ---
 
 ## Gate 5 — Paper forward test

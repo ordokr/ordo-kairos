@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import random
 import time
 import urllib.error
 from datetime import datetime, timezone
@@ -120,6 +121,168 @@ def quote(m: dict) -> tuple[float, float, float, float] | str:
     return spread, tick, price, volume / age
 
 
+# ---------------------------------------------------------------------------
+# Gate M - the null gate for the realized-half-spread estimator
+# ---------------------------------------------------------------------------
+
+#: Horizons reported. 60 minutes is the registered decision horizon; the rest are the term structure,
+#: which shows how fast information arrives rather than separating bounce from information.
+HORIZONS = (1, 5, 15, 60)
+
+
+def synthetic_market(n: int, *, half_spread: float, informed_frac: float, impact: float,
+                     vol: float, drift: float, seed: int, stale: float = 0.0) -> list[float]:
+    """A trade-price series with a controlled amount of informed flow.
+
+    Each step: the true value moves exogenously, a trade prints on the bid or the ask, and **if that
+    trade was informed the value then moves permanently in its direction**. So ``informed_frac`` and
+    ``impact`` set how much of the spread gets taken, and the expected realized half-spread is
+    ``half_spread - informed_frac * impact`` — which is what the estimator has to recover without
+    being told any of it.
+    """
+    rng = random.Random(seed)
+    value = 0.50
+    prices: list[float] = []
+    last: float | None = None
+    for _ in range(n):
+        # `stale` makes the series a **minute-sampled** one rather than a trade sequence: most
+        # minutes carry no trade and repeat the last price. Measured on real Polymarket history:
+        # 95.7% of minute-to-minute prices are unchanged and 59.6% of contributions are exactly
+        # zero. A null world that trades every step does not resemble the data the estimator is
+        # pointed at, which is the G14 failure Gate C committed -- power 1.000 on its own parser's
+        # dialect and 0/26 on real text.
+        if last is not None and rng.random() < stale:
+            prices.append(last)
+            continue
+        value += rng.gauss(0.0, vol) + drift
+        side = rng.choice((-1.0, 1.0))
+        informed = rng.random() < informed_frac
+        last = value + side * half_spread
+        prices.append(last)
+        if informed:
+            value += side * impact
+    return prices
+
+
+#: ``(name, kwargs, maker_profits)``. ``maker_profits`` is the ground truth the estimator must
+#: recover: False worlds are the **nulls** (informed flow takes the spread, and reporting a profit
+#: there licenses spend on a losing strategy), True worlds are the **power** side (an estimator that
+#: reports losses everywhere refuses everything and is worth nothing).
+H = 0.01
+WORLDS = (
+    ("informed_strong      (impact 2x spread)", dict(informed_frac=1.0, impact=2 * H,
+                                                     vol=0.0, drift=0.0), False),
+    ("informed_breakeven   (impact = spread)", dict(informed_frac=1.0, impact=H,
+                                                    vol=0.0, drift=0.0), False),
+    ("toxic_minority       (10% at 15x)", dict(informed_frac=0.10, impact=15 * H,
+                                               vol=0.0, drift=0.0), False),
+    ("pure_bounce          (no information)", dict(informed_frac=0.0, impact=0.0,
+                                                   vol=0.0, drift=0.0), True),
+    ("walk_plus_bounce     (uninformed vol)", dict(informed_frac=0.0, impact=0.0,
+                                                   vol=0.3 * H, drift=0.0), True),
+    # The two worlds that match the regime the real measurement actually runs in. Added after the
+    # real history was measured at 95.7% staleness, because the worlds above trade every step and
+    # therefore validated the estimator on a process the data does not resemble (AXIOMS G14).
+    ("STALE informed       (95.7% no-trade)", dict(informed_frac=1.0, impact=2 * H,
+                                                   vol=0.0, drift=0.0, stale=0.957), False),
+    ("STALE bounce         (95.7% no-trade)", dict(informed_frac=0.0, impact=0.0,
+                                                   vol=0.0, drift=0.0, stale=0.957), True),
+)
+
+#: Diagnostic, not gated. A trending market with flow that does not predict the trend: the maker is
+#: on the wrong side of the drift, which is genuine inventory risk rather than an estimator fault, so
+#: pre-asserting a direction here would be asserting an answer.
+DIAGNOSTIC = ("drift_uninformed     (trend, blind flow)",
+              dict(informed_frac=0.0, impact=0.0, vol=0.1 * H, drift=0.02 * H))
+
+
+def interval_verdict(ci: tuple[float, float] | None) -> str:
+    """``"profit"`` / ``"loss"`` / ``"none"``. Three states, because two forced the first failure."""
+    if ci is None:
+        return "none"
+    lo, hi = ci
+    if lo > 0.0:
+        return "profit"
+    if hi < 0.0:
+        return "loss"
+    return "none"
+
+
+def run_nulls(reps: int, n: int) -> int:
+    from kairos.microstructure import realized_half_spread_ci, term_structure
+    # One implementation, not two - the same import gateb.py makes, for the same reason. The first
+    # version of this gate hard-coded `rate <= 0.05`, which is precisely the "invented tolerance"
+    # every other gate here refuses.
+    from kairos.nullworld import ALPHA, FPR_TAIL_ALPHA, POWER_FLOOR, _binomial_tail
+
+    print("=" * 88)
+    print("GATE M - NULL GATE for the realized half-spread")
+    print("=" * 88)
+    print("  The claim under test is maker PROFITABILITY, so the nulls are the worlds where")
+    print("  informed flow takes the spread. Reporting a profit there is the failure that")
+    print("  licenses spend on a losing strategy (PROTOCOL Gate M, amendment 2 of 2026-09-14).")
+    print("  Verdicts are block-bootstrap INTERVALS, not point estimates: the first run of this")
+    print("  gate failed because a point estimate forces a two-way call on a noisy quantity.")
+    print(f"  half-spread {H} | {reps} replications x {n:,} trades | decision horizon 60m")
+
+    print(f"\n  {'world':<42} {'R(60)':>9} {'profit':>8} {'loss':>7} {'none':>7} "
+          f"{'tail':>7} {'truth':>7}")
+    ok = True
+    for name, kw, profits in WORLDS:
+        calls: collections.Counter[str] = collections.Counter()
+        points: list[float] = []
+        for rep in range(reps):
+            prices = synthetic_market(n, half_spread=H, seed=1000 + rep, **kw)
+            ci = realized_half_spread_ci(prices, 60, seed=rep, draws=300)
+            calls[interval_verdict(ci)] += 1
+            if ci is not None:
+                points.append((ci[0] + ci[1]) / 2.0)
+        rate_profit = calls["profit"] / reps
+        # Power worlds are gated on the floor; null worlds on the exact binomial tail of their
+        # false-profit count, which is what "exceeds what chance allows" means here.
+        tail = _binomial_tail(calls["profit"], reps, ALPHA)
+        verdict = "PASS" if ((rate_profit >= POWER_FLOOR) if profits
+                             else (tail >= FPR_TAIL_ALPHA)) else "FAIL"
+        ok = ok and verdict == "PASS"
+        print(f"  {name:<42} {median(points) if points else float('nan'):>+9.5f} "
+              f"{rate_profit:>7.0%} {calls['loss'] / reps:>6.0%} {calls['none'] / reps:>6.0%} "
+              f"{'-' if profits else f'{tail:7.4f}'} {str(profits):>7}  {verdict}")
+
+    name, kw = DIAGNOSTIC
+    prices = synthetic_market(n, half_spread=H, seed=7, **kw)
+    ts = term_structure(prices, HORIZONS)
+    print(f"  {name:<42} {ts[60]:>+9.5f}                          (diagnostic, not gated)")
+
+    # The exhibit: the same estimator read at a single short horizon, which is what a gate written
+    # without a term structure would have used. Information has not arrived by k=1, so R(1) still
+    # looks like the half-spread in worlds where the maker is being run over.
+    print(f"\n  EXHIBIT - a gate decided at R(1) instead of R(60):")
+    misled = 0
+    losing = sum(1 for _, _, p in WORLDS if not p)
+    for name, kw, profits in WORLDS:
+        if profits:
+            continue
+        prices = synthetic_market(n, half_spread=H, seed=99, **kw)
+        ci1 = realized_half_spread_ci(prices, 1, seed=1, draws=300)
+        if interval_verdict(ci1) == "profit":
+            misled += 1
+            print(f"      {name:<42} R(1) interval says PROFIT, truth is LOSS")
+    print(f"      {misled} of {losing} losing worlds would have passed on a single short horizon")
+
+    print(f"\n{'=' * 88}")
+    print(f"  GATE M NULL GATE: {'PASSED' if ok else 'FAILED'}")
+    if not ok:
+        print("  The estimator does not separate the worlds. Fix it; do not tune the worlds (A8).")
+        print("  No measurement may run.")
+    else:
+        print("  The estimator reports losses where flow is informed and the half-spread where it")
+        print("  is not, and abstains rather than guessing when the sample cannot carry the call.")
+        print(f"  Minimum usable observations per unit is set by this: below ~{n:,} the loss")
+        print("  worlds return `none` rather than `loss`. `python scanm.py` is licensed.")
+    print("=" * 88)
+    return 0 if ok else 1
+
+
 def flow_share_at_one_tick(rows: list[tuple[float, float, float, float]]) -> float:
     """Share of **flow** sitting in markets quoted at one tick, from ``(spread, tick, price, vol)``.
 
@@ -137,7 +300,14 @@ def flow_share_at_one_tick(rows: list[tuple[float, float, float, float]]) -> flo
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pages", type=int, default=21)
+    ap.add_argument("--nulls", action="store_true",
+                    help="run Gate M's null gate for the realized-half-spread estimator")
+    ap.add_argument("--reps", type=int, default=40)
+    ap.add_argument("--trades", type=int, default=4000)
     args = ap.parse_args()
+
+    if args.nulls:
+        return run_nulls(args.reps, args.trades)
 
     print("=" * 88)
     print("GATE M.0 - MAKER DEAD-ON-ARRIVAL CHECK (is there room to quote)")

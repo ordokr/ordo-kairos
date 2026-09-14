@@ -8,6 +8,78 @@ Newest pass at the top.
 
 ---
 
+## Pass 29 — Gate M run; the spread survives, 3.9% of it (2026-09-14)
+
+Gate M's null gate passed and the measurement ran. Result in
+[`SCANM-RESULTS.md`](SCANM-RESULTS.md). **Verdict NOT REFUTED; a maker retains 3.9% of the quoted
+half-spread and informed flow takes 96.1%.**
+
+### 29.1 The null worlds traded every step; the real data is 95.7% stale
+
+Before trusting the verdict, the real series was characterised: **95.7% of minute-to-minute prices
+are unchanged and 59.6% of contributions are exactly zero.** Polymarket's `prices-history` is a
+minute-sampled series, not a trade sequence, and the null worlds generated a trade every step.
+
+**The estimator had been validated on a process the data does not resemble. That is the G14 failure
+Gate C already committed** — power 1.000 against its own parser's dialect, 0/26 against real venue
+text — and it was caught here only because the real series was measured before the number was
+believed rather than after.
+
+Fixed by adding two worlds at the measured staleness. The estimator **survived**: STALE informed
+0%/100% profit/loss, STALE bounce 100%/0%, and STALE bounce recovers `+0.00928` against a true
+`+0.01000`. So the verdict stands. It did not have to, and the check was one probe.
+
+### 29.2 The power precondition compared incommensurable counts
+
+The registered threshold of **100,000 observations** was calibrated on synthetic *trade sequences*
+where every observation is a distinct trade. It was applied to **minute samples**, ~96% of which
+carry no trade. `276,421 >= 100,000` was therefore not a check of anything — a units error of the
+same family as Pass 27.1, in a precondition rather than a hurdle.
+
+Re-calibrated in the regime that actually obtains: at 276,000 samples and 95.7% staleness, detection
+is 10/10 in both directions. That, not the raw count, is what licenses the verdict.
+
+### 29.3 The pattern extends: five gates, five defects, and they are not only in decision rules
+
+Pass 28.2 recorded three gates with three decision-rule defects and zero measurement defects. With
+Gate M:
+
+| pass | gate | defect | where |
+|---|---|---|---|
+| 26.1 | D.0 | omitted a standing precondition | decision rule |
+| 27.1 | 4.0 | rate tested against a magnitude | decision rule |
+| 28.1 | M.0 | markets weighted, hypothesis about flow | decision rule |
+| — | M | statistic measured the wrong quantity; sign backwards | **estimator design**, caught pre-run |
+| — | M | point estimate where the quantity is noisy | **inference**, caught by the null gate failing |
+| 29.1 | M | null worlds unlike the real data | **validation regime** |
+| 29.2 | M | precondition in the wrong units | precondition |
+
+The refinement to Pass 28.2: the errors are not specifically in decision rules, they are in
+**everything that surrounds the measurement** — what is measured, how its noise is handled, what it
+is validated against, and what the threshold means. The arithmetic was correct every time.
+
+Two of Gate M's four were caught by the protocol's own machinery working as designed: the null gate
+**failed on its first run** and forced the interval inference, and the estimator's replacement
+happened before it ever ran. That is the machinery earning its cost.
+
+### 29.4 What the verdict licenses, and the number that outranks it
+
+NOT REFUTED means the interval sits above zero. It does not mean the economics work.
+
+Gate M.0's gross ceiling of `$29.28M/yr` on with-room flow becomes **~$1.14M/yr** net of measured
+adverse selection, at a 100% capture rate that is impossible — incumbents already hold **77.4%** of
+flow at one tick. At a 1% share it is ~`$11,400/yr`, before queue position, inventory, infrastructure
+and operator time, none of which is measured and all of which cut against.
+
+**The tick test attenuates `R` toward zero**, measured: a true `-0.010` reads as `-0.0028`. Zero is
+the direction that flatters the maker, so **NOT REFUTED is the less trustworthy of the two possible
+verdicts here**, and the true retention may be below 3.9%.
+
+Per the registered rule this proceeds to Gate 3, whose content for this class is **queue position** —
+nothing measured here says the fills would arrive at all.
+
+---
+
 ## Pass 28 — Gate M.0 run; the constraint moved, and a third decision rule was miswritten (2026-09-14)
 
 Gate M.0 ran as registered. Result in [`GATEM-RESULTS.md`](GATEM-RESULTS.md). It is the **first
