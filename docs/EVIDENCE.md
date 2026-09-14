@@ -11,6 +11,7 @@ Strength grades:
 | **A** | Solid single study or well-cited preprint; direction usable, magnitude indicative |
 | **B** | Recent preprint, low/zero citations, narrow deployment. **Hypothesis source only** (A3) |
 | **R** | Refuted, corrected, or downgraded. Recorded so it is not re-asserted |
+| **U** | **Unverified public claim** — social media, promotional writeup, press coverage. Weaker than B: no method, no data, usually a commercial interest. **Hypothesis source only (A3), and never a planning input.** Recorded here *with its test* so the same claim cannot return as folklore |
 
 Last revised 2026-09-08.
 
@@ -151,3 +152,44 @@ Recorded so they are not silently re-asserted. Full history in [`CORRECTIONS.md`
 | `n_eff` (ρ=1) as an inference input | **Downgraded to planning heuristic** | C4 |
 | 100× manipulation-cost multiple | **Rejected as a production rule** | An arbitrary safety factor standing in for an unmeasured quantity (A6). A manipulator's incentive is not bounded by our position size |
 | "Independent LLM ensemble" | **Retracted** | C8; ρ ≈ 0.70, ten agents ≈ 1.4 effective |
+
+## 9. Unverified public claims, and what testing them cost
+
+Grade **U**. Social-media and press claims about AI agents making money, tested 2026-09-14 with
+machinery already in this repository. They are recorded **with their tests** because an untested
+claim returns as folklore, and because the cost of testing one turned out to be minutes.
+
+The pattern across all three: **each claim carries the number that refutes it.** None needed new
+data.
+
+| Claim | Source | Test | Result |
+|---|---|---|---|
+| AI agent finds linked prediction markets; **~20% average return** on week-long trades; **60–70% of high-confidence links resolve correctly** | IBM + Columbia, circulated on X | `legset.break_even_failure_rate(0.20, 1.0)` | **Internally inconsistent.** A 20% edge on a $1 stake tolerates a **16.7%** link-failure rate. The claim's own reported accuracy is a **30–40%** failure rate — two to two-and-a-half times break-even. At 10% edge the tolerance falls to 9.1% |
+| ETH SMA-crossover agent, backtest **289.71% → 419.29% after refinement**, refinement being "Monte Carlo over hundreds of strategy variations" | X, "no code written" writeup | `score.expected_max_sharpe(n)` | **The refinement is the defect.** 300 trials of **pure noise** yield an expected max Sharpe of **2.90**; 1,000 yield 3.26. Justifying a *true* Sharpe of 1 after 300 trials needs **11.4 years** of honest backtest. Selecting the best of hundreds is not refinement, it is manufacture |
+| Wallet "0x8dxd": **$313 → ~$437,600 in a month, 98% win rate**, latency arbitrage on 15-minute BTC/ETH/SOL contracts against Binance/Coinbase spot | Press coverage | endpoint probe + our own §6 | **Verifiable in principle, unverifiable as published.** `data-api.polymarket.com/value?user=<address>` resolves and returns portfolio value, so on-chain PnL *is* checkable — but the published identifier is **truncated**, and the leaderboard endpoints 404/400. A truncated handle is what makes a concrete-looking claim unfalsifiable |
+
+### What the third claim runs into, from evidence already in this ledger
+
+- **The mechanism was measured and is negative.** OpenMarket (Young 2026, §6) found Polymarket
+  responds to large Binance moves at ~347 ms median and that a 43-feature walk-forward model is
+  **negative after costs** — the same lag, the same venue, done properly.
+- **The horizon choice is not innocent.** Dai et al. 2026 (§6) measured settlement-time manipulation
+  on 5-minute BTC contracts capturing profit "mostly from retail", and **absent at 15 minutes**. The
+  claim names 15-minute contracts, which is the horizon where that particular predation is not.
+- **PROTOCOL excludes the class anyway** (D4): the manipulability of the settlement reference is the
+  disease and the horizon is a symptom, so these markets fail closed here regardless of the claim.
+
+### Apparatus note
+
+Swept 1,600 open markets across both volume orderings: **82** short-horizon "Up or Down" crypto
+markets exist as listings, every one reachable quoting **spread 1.0, last 0, volume 0** — dead
+shells, dated months out. The live five-minute windows are not reachable through offset pagination,
+so **this repository cannot presently observe the market class the claim is about.** That is a
+statement about our apparatus, not about the claim (G12).
+
+### What this licenses
+
+**Nothing about strategy.** It licenses one operating rule: a public claim whose identifier is
+truncated, whose selection procedure is "best of many", or whose own reported accuracy sits below
+its own break-even, is refutable **in minutes** with instruments already built — so it should be,
+before it is allowed to reorder a roadmap.
