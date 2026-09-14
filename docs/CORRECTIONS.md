@@ -8,6 +8,84 @@ Newest pass at the top.
 
 ---
 
+## Pass 33 — Gate M2 run; a fee coefficient that was wrong everywhere, in the safe direction (2026-09-14)
+
+Class M2 registered and run. Result in [`GATEM2-RESULTS.md`](GATEM2-RESULTS.md). **NOT REFUTED:
+net `$139,450`/yr at 2,000 posted contracts, carried by the maker rebate and not by the spread.**
+
+### 33.1 Every Polymarket cost this project has ever computed was charged at the wrong rate
+
+`CostModel.taker_fee_coeff` defaults to **0.07**, documented as "the shape of Kalshi's published
+trading fee", and Gates B, C, D.0 and 4.0 charged every Polymarket cost at it. The live
+`feeSchedule` on 1,445 markets across **11 distinct schedules** says the true rate is:
+
+| rate | categories | overcharge at 0.07 |
+|---|---|---|
+| 0.07 | crypto | none — exact |
+| 0.05 | sports v3, weather, culture, economics, general | 40% |
+| 0.04 | politics, finance, tech, mentions | 75% |
+| 0.03 | sports v2 | 133% |
+
+**0.07 is the maximum across every live category**, so the error is one-directional: costs were
+overstated in every gate, never understated. Those refutations stand *a fortiori* and Class C's
+unbanded NOT-REFUTED would be more not-refuted, not less. The alpha on those looks is spent (A6) and
+**they are not re-run**; Gate M2 reads each market's live schedule instead of the constant.
+
+`takerOnly` is `true` on **11 of 11** schedules, which retrospectively confirms `maker_fee_coeff = 0.0`.
+
+### 33.2 The registration's own fee table was stale, and its claim about which category dominates was wrong
+
+Two errors in Class M2's registration, both transcribed from published documentation rather than
+measured:
+
+1. **Sports pays a 15% rebate, not 20%**, and there is a second live sports schedule
+   (`sports_fees_v2`, 0.03/25%) that the published table does not mention at all.
+2. **"81 of 100 markets sampled are `politics_fees`"** was a small-sample artifact. Unfiltered, the
+   universe is **52% sports and 20% politics**; after this gate's own band and tick-room
+   preconditions, politics is **20 of 195**. The registration's headline — a 75% overcharge on "the
+   dominant category" — named the wrong category.
+
+**Neither error reached the arithmetic**, because the runner reads `feeSchedule` per market rather
+than a hardcoded table. That is the whole reason it did not: a table in prose cannot be wrong in a
+way the code notices, and this one was wrong for a day. The lesson is Pass 28.2 again — the defect
+was in the sentences surrounding the measurement, not in the measurement.
+
+### 33.3 Holding rewards were added as a positive without charging what the capital costs
+
+The first run of `gatem2.py` reported a total that added **3.25%/yr** of holding rewards to the
+spread and rebate terms while charging nothing for the capital those rewards require. Holding
+rewards are paid on **held position value**; this repository charges **6%** for locked capital.
+3.25% on capital costing 6% is a **net loss of 2.75%**.
+
+Corrected: capital is stated explicitly ($1 per posted contract per market, the cost of the hedged
+YES+NO pair), charged at the 6% hurdle, and holding rewards appear beside it — where at 2,000
+contracts they contribute **−$10,725**, not +$12,675. The verdict survives only because the rebate
+is 4.9x the entire cost of capital.
+
+This is **Pass 27.1 in a new costume**: a rate added to a dollar total without pricing the dollars.
+Caught in the same session that produced it, by re-reading the column headings.
+
+### 33.4 The meta-guard was red at `HEAD` and the Gate F commit was pushed anyway
+
+`TestCorrectionsLogStaysExecutable` fails when a pass is added to this log with no guard in
+`test_regressions.py`. Checked out at `a6832ca`, it **fails on `Pass 32`** — the Gate F commit added
+the corrections entry and never added the guard, and the push went out with the suite red.
+
+The ordering that produced it: run the suite, *then* write the corrections entry, then commit. The
+guard exists precisely to catch a correction that stays prose, and it caught this one a day late
+because nothing re-ran it after the prose was written. **Verification must come after the last edit,
+not after the last code edit.** Guards for Passes 32 and 33 are now present; the suite is green.
+
+### 33.5 The registered decision rule said "reported separately" and the runner nets them
+
+Amendment, recorded rather than applied silently: the registration specified holding rewards be
+**reported separately** from the market-edge terms. The runner reports them in their own column *and*
+includes them in NET, because once capital is charged they are a **cost-bearing** term — excluding a
+negative contribution from the total would flatter the hypothesis. Adding a charge that cuts against
+the hypothesis is permitted; the reverse would not be.
+
+---
+
 ## Pass 32 — Gate F run; carry does not clear the cost of the capital it locks (2026-09-14)
 
 Class F registered and run. Result in [`GATEF-RESULTS.md`](GATEF-RESULTS.md). **REFUTED: best net

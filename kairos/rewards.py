@@ -28,7 +28,8 @@ entire gate. It was invisible in the second-hand summary the candidate was gener
 
 from __future__ import annotations
 
-__all__ = ["order_score", "q_min", "book_score", "share_of_pool"]
+__all__ = ["order_score", "q_min", "book_score", "share_of_pool", "maker_rebate",
+           "holding_reward"]
 
 #: One-sided quoting is credited at 1/c of a balanced book, in the normal midpoint range.
 ONE_SIDED_DIVISOR = 3.0
@@ -86,3 +87,53 @@ def share_of_pool(own_score: float, competitor_score: float) -> float:
         return 0.0
     denom = own_score + max(0.0, competitor_score)
     return own_score / denom if denom > 0.0 else 0.0
+
+
+# ---------------------------------------------------------------------------
+# The other two programmes: maker rebates and holding rewards
+# ---------------------------------------------------------------------------
+
+
+def maker_rebate(fee_rate: float, rebate_rate: float, price: float) -> float:
+    """Rebate per contract you were the **maker** for.
+
+    The venue charges takers ``fee = C x feeRate x p x (1-p)`` and redistributes ``rebateRate`` of
+    it to makers. The pool is ``rebateRate x total fees`` and a maker's share is
+    ``own_fee_equivalent / total_fee_equivalent``, so the two scale together and the per-contract
+    rebate is simply ``rebateRate x fee`` — **independent of how many other makers are present.**
+
+    That independence is the structural difference from liquidity rewards, which normalise against
+    every entrant and which Gate R measured as a congestion game. It is also why this term dwarfs
+    the spread: at ``p = 0.5`` in a politics market the rebate is ``0.0025`` per contract against a
+    **measured** spread retention of ``0.00039`` (Gate M).
+
+    A fee-free category (geopolitics) pays **nothing** — excluded by arithmetic, not by choice.
+    """
+    if fee_rate < 0.0 or rebate_rate < 0.0:
+        raise ValueError("fee and rebate rates must be non-negative")
+    p = _require_price(price)
+    return rebate_rate * fee_rate * p * (1.0 - p)
+
+
+def holding_reward(position_value: float, annual_rate: float, days: float) -> float:
+    """Holding-reward accrual on a position held for ``days``.
+
+    Paid for **merely holding** an eligible position — no quote, no fill, no spread. Sampled hourly
+    and paid daily at an annualised rate the venue sets.
+
+    .. warning::
+
+       **This is a treasury-funded subsidy, not a market edge.** The venue states the rate is
+       variable and at its discretion, so a figure resting on it carries a single-decision failure
+       mode that no measurement can hedge. At 3.25% it does not clear the 6% this repository already
+       charges for locked collateral, so it cannot stand alone — it can only stack.
+    """
+    if position_value < 0.0 or annual_rate < 0.0 or days < 0.0:
+        raise ValueError("position value, rate and days must be non-negative")
+    return position_value * annual_rate * days / 365.0
+
+
+def _require_price(value: float) -> float:
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"price must lie in [0, 1], got {value!r}")
+    return value

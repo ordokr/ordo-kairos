@@ -1193,6 +1193,117 @@ class TestPass31AnOptimumWhereTheMeasuredThingPaysNothing(unittest.TestCase):
         self.assertIn("no_reward_pool", src)
 
 
+class TestPass32AnEstimatorMustNotPayForBeingLiquidated(unittest.TestCase):
+    """Pass 32.1: crediting the spot leg at the overshot price manufactured profit from a breach."""
+
+    def test_a_violent_breach_cannot_pay_more_than_a_marginal_one(self):
+        from kairos.carry import simulate
+
+        f = [0.0001] * 100
+        a = simulate(f, [0.20] + [0.0] * 99, leverage=5.0, taker_fee=0.0005, penalty=0.01)
+        b = simulate(f, [0.80] + [0.0] * 99, leverage=5.0, taker_fee=0.0005, penalty=0.01)
+        self.assertTrue(a.liquidated and b.liquidated)
+        self.assertAlmostEqual(a.pnl, b.pnl, places=12)
+
+
+class TestPass33AFeeConstantMustNeverUndercharge(unittest.TestCase):
+    """Pass 33.1: every Polymarket cost this project computed used 0.07 where the live schedules
+    run 0.03 to 0.07. The error is tolerable **only** because 0.07 is the maximum, so the default
+    can overstate a cost but never understate one. That one-directionality is the property."""
+
+    #: Observed live on 1,445 markets across 11 distinct `feeSchedule` values (Gate M2).
+    LIVE_RATES = (0.03, 0.04, 0.05, 0.07)
+
+    def test_the_default_coefficient_is_the_ceiling_of_the_live_schedules(self):
+        from kairos.costs import CONSERVATIVE
+
+        self.assertEqual(CONSERVATIVE.taker_fee_coeff, max(self.LIVE_RATES))
+
+    def test_the_default_never_charges_less_than_any_live_rate_anywhere_in_band(self):
+        from kairos.costs import CONSERVATIVE, CostModel
+
+        for rate in self.LIVE_RATES:
+            cheaper = CostModel(taker_fee_coeff=rate)
+            for price in (0.05, 0.2, 0.5, 0.8, 0.95):
+                self.assertGreaterEqual(
+                    CONSERVATIVE.fee(price), cheaper.fee(price),
+                    f"default understates the cost at rate {rate} price {price}: a refutation "
+                    f"computed with it would not stand a fortiori",
+                )
+
+    def test_makers_are_charged_nothing_which_is_what_taker_only_means(self):
+        """`takerOnly` is true on 11 of 11 live schedules."""
+        from kairos.costs import CONSERVATIVE
+
+        self.assertEqual(CONSERVATIVE.fee(0.5, maker=True), 0.0)
+
+
+class TestPass33ARateTableInProseCannotBeChecked(unittest.TestCase):
+    """Pass 33.2: the registration's transcribed rate table was stale (sports pays 15%, not 20%)
+    and its claim about the dominant category was wrong. Neither reached the arithmetic because the
+    runner reads each market's live `feeSchedule`. Keeping it that way is the guard."""
+
+    def test_the_runner_reads_the_schedule_from_the_market(self):
+        src = (ROOT / "gatem2.py").read_text(encoding="utf-8")
+        self.assertIn('m.get("feeSchedule")', src)
+        self.assertIn('fs["rate"]', src)
+        self.assertIn('fs["rebateRate"]', src)
+
+    def test_a_fee_free_market_yields_no_rebate_rather_than_a_default_one(self):
+        """Geopolitics is fee-free: no fee paid means no rebate pool to share. Excluded by
+        arithmetic, not by choice (AXIOMS G5 — a refusal is not a measurement of zero)."""
+        import gatem2
+
+        self.assertEqual(
+            gatem2.fee_terms({"feesEnabled": True,
+                              "feeSchedule": {"rate": 0.0, "rebateRate": 0.25}}),
+            "fee_free_no_rebate",
+        )
+        self.assertEqual(gatem2.fee_terms({"feesEnabled": False}), "fees_disabled")
+        self.assertEqual(gatem2.fee_terms({"feesEnabled": True}), "no_fee_schedule")
+        self.assertEqual(
+            gatem2.fee_terms({"feesEnabled": True,
+                              "feeSchedule": {"rate": 0.04, "rebateRate": 0.25}}),
+            (0.04, 0.25),
+        )
+
+
+class TestPass33ASubsidyMustPayForTheCapitalItRequires(unittest.TestCase):
+    """Pass 33.3: holding rewards were added as a positive with nothing charged for the capital
+    they are paid on. 3.25% on capital costing 6% is a loss, and the first run booked it as a gain.
+    Pass 27.1 in a new costume: a rate added to a dollar total without pricing the dollars."""
+
+    def test_holding_rewards_do_not_clear_the_capital_hurdle_they_are_paid_on(self):
+        from kairos.costs import CONSERVATIVE
+        from kairos.rewards import holding_reward
+        import gatem2
+
+        capital = 390_000.0
+        earned = holding_reward(capital, gatem2.HOLDING_RATE, 365.0)
+        cost = capital * CONSERVATIVE.settlement_wedge_annual
+        self.assertLess(earned, cost, "the subsidy must not be booked as a net gain")
+        # Sensitivity: the guard discriminates — at the hurdle rate it would break even exactly.
+        self.assertAlmostEqual(
+            holding_reward(capital, CONSERVATIVE.settlement_wedge_annual, 365.0), cost, places=6)
+
+    def test_the_runner_charges_capital_and_reports_a_net(self):
+        src = (ROOT / "gatem2.py").read_text(encoding="utf-8")
+        self.assertIn("cap_cost", src)
+        self.assertIn("settlement_wedge_annual", src)
+        self.assertIn("net = sp + rb + hold - cap_cost", src,
+                      "Pass 33.4: holding rewards are a cost-bearing term and belong in NET")
+
+    def test_the_rebate_is_flat_in_competition_unlike_the_liquidity_pool(self):
+        """The structural finding: pool and share scale together, so per-contract rebate is
+        `rebateRate x feeRate x p(1-p)` whatever other makers do. Gate R's congestion game
+        (`order_score` falls to zero at the max-spread edge) is a different regime, and the two
+        must not be reasoned about together."""
+        from kairos.rewards import maker_rebate
+
+        self.assertAlmostEqual(maker_rebate(0.04, 0.25, 0.5), 0.0025, places=12)
+        self.assertEqual(maker_rebate(0.0, 0.25, 0.5), 0.0, "no fee, no rebate")
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

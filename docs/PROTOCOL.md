@@ -1750,6 +1750,137 @@ usable history**, WITHHELD as apparatus.
 
 ---
 
+## Class M2 — The subsidised maker, and Gate M2
+
+> **REGISTERED 2026-09-14, before `gatem2.py` was written and before any rebate figure was
+> computed.** Runs: `python gatem2.py`.
+>
+> **STATUS: RUN 2026-09-14 — NOT REFUTED, AND SUBSIDY-DEPENDENT.** Net **$139,450/yr** at 2,000
+> posted contracts across 195 markets against a $104.70/yr floor, carried by the **maker rebate**
+> (3.6x the spread) and not by the spread or by holding rewards. Holding rewards pay 3.25% on
+> capital costing 6% and contribute **−$10,725**. Full result in
+> [`GATEM2-RESULTS.md`](GATEM2-RESULTS.md). Class M survives as a *subsidy-dependent strategy* and
+> must never be reported as an edge; **subsidy persistence is a new registration and is not
+> licensed here.**
+
+### Amendment 1 — two errors in this registration, recorded 2026-09-14 after the run
+
+Recorded rather than silently edited, per the standing rule. **Neither reached the arithmetic**,
+because the runner reads each market's live `feeSchedule` rather than the table below.
+
+1. **The rate table is stale in one row.** Live, `sports_fees_v3` pays a **15%** rebate, not 20%,
+   and a second sports schedule (`sports_fees_v2`, **0.03 / 25%**) exists that the published table
+   omits entirely. Verified across 11 distinct live schedules on 1,445 markets.
+2. **"81 of 100 markets sampled are `politics_fees`" is wrong.** Unfiltered the universe is **52%
+   sports, 20% politics**; after this gate's own band and tick-room preconditions politics is
+   **20 of 195**. The claim below that the 75% overcharge falls on "the dominant category" names the
+   wrong category. The correction that survives is stronger and simpler: **0.07 is the maximum of
+   every live rate**, so `taker_fee_coeff` overstates costs everywhere and understates them nowhere.
+
+See [`CORRECTIONS.md`](CORRECTIONS.md) Pass 33.1–33.2.
+
+### Why Class M has to be re-opened
+
+Gate M measured that a maker **retains 3.9% of the quoted half-spread** — `R(60) = +0.00039` per
+filled contract — and every gate since has treated maker rebates and holding rewards as "excluded,
+and cutting for". Examining them changes the arithmetic by an order of magnitude, so the exclusion
+cannot stand.
+
+Polymarket runs **three** subsidy programmes and they are structurally different:
+
+| programme | paid for | competition-normalised? | measured |
+|---|---|---|---|
+| Liquidity rewards | orders **resting** near the midpoint | **Yes** — your share falls as makers arrive | Gate R: knife-edge |
+| **Maker rebates** | contracts you were the **maker** for | **No** | this gate |
+| **Holding rewards** | **merely holding** an eligible position | No | this gate |
+
+**The rebate's independence from competition is the whole point.** The pool is
+`rebateRate x total taker fees` and your share is `your_fee_equivalent / total_fee_equivalent`, so
+the two scale together and **your rebate per filled contract is `rebateRate x fee`, whatever other
+makers do.** Gate R's congestion game does not apply here.
+
+### The published mechanics, taken from the venue
+
+Taker fee, confirmed identical in shape to `CostModel.fee()`:
+
+```
+fee = C x feeRate x p x (1 - p)          C = shares, p = price
+```
+
+**Makers are never charged.** `feeSchedule.takerOnly` is `true` on every market inspected, which
+retrospectively confirms this repo's `maker_fee_coeff = 0.0` default.
+
+| category | feeRate | rebateRate |
+|---|---|---|
+| Crypto | 0.07 | 20% |
+| Sports | 0.05 | 20% |
+| **Finance, Politics, Mentions, Tech** | **0.04** | **25%** |
+| Economics, Culture, Weather, Other | 0.05 | 25% |
+| **Geopolitics** | **0 — fee-free** | **none: no fee, no rebate** |
+
+**Holding rewards: 3.25% annualised** on eligible position value, sampled hourly, paid daily,
+**funded from the Polymarket treasury** and explicitly "variable and subject to change at
+Polymarket's discretion."
+
+### The correction this forces on every prior gate
+
+`CostModel.taker_fee_coeff` defaults to **0.07**, described as "the shape of Kalshi's published
+trading fee", and every Polymarket cost in Gates B, C, D.0 and 4.0 was charged at it. **81 of 100
+markets sampled are `politics_fees` at 0.04** — a **75% overcharge** on the dominant category.
+
+Direction: costs were **overstated**, so those refutations were conservative and stand a fortiori.
+Class C's unbanded NOT-REFUTED would be *more* not-refuted. The alpha on those looks is spent and
+they are **not re-run**; the error is recorded (`CORRECTIONS.md` Pass 33) and the correct
+per-category rate is used here.
+
+### The hypothesis, stated so it can fail
+
+> **H:** With rebates and holding rewards included, a maker's total per-contract economics exceed
+> the spread-only figure by enough to clear the floor at a size whose fills are achievable.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **absolute dollars per year** (Pass 27.1), with the per-contract decomposition beside it |
+| **Weighting** | per market, summed; per-category reported, because the fee rate and rebate rate both vary by category |
+| **Preconditions** | longshot band (Pass 26.1); tick room > 1 (Gate M.0); **`feesEnabled`** — a fee-free market pays **no** rebate, so geopolitics is excluded by arithmetic rather than by choice |
+| **Per-contract model** | `RETENTION x s` (Gate M, measured) **+** `rebateRate x feeRate x p(1-p)` (published) |
+| **Holding rewards** | 3.25%/yr on position value, applied to capital actually held, **reported separately** — it is a treasury subsidy, not a market edge |
+| Size curve (C11) | 25 / 100 / 500 / 2000, as Gate 3.0 |
+| Floor | **$104.70/yr**, unchanged from Gates M.0, 3.0 and R so all four compare |
+
+### Pre-committed expectation
+
+At `p = 0.5` in politics the rebate is `0.25 x 0.04 x 0.25 = 0.0025` per filled contract against a
+measured spread retention of `0.00039` — **about 6.4x**. The expectation is therefore that total
+maker economics land roughly **7x** Gate 3.0's figures, that holding rewards at 3.25% **fail** the
+6% capital hurdle on their own, and that the binding constraint reverts to Gate 3.0's queue
+question: how much taker flow can actually be filled. Recorded before the numbers.
+
+**And the honest counterweight, recorded now:** holding rewards are a **treasury-funded customer
+acquisition subsidy**, variable at the venue's discretion. Maker rebates are funded by fees the venue
+chose to introduce and could withdraw. **A subsidy the counterparty can switch off with one decision
+is not an edge; it is a promotion**, and any figure resting on it carries a single-decision failure
+mode that no amount of measurement can hedge.
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Total net below the floor at every size | **REFUTED.** Class M closes for good |
+| Clears the floor | Class M survives **as a subsidy-dependent strategy**, and must be reported as such — never as an edge. Next question is subsidy persistence, which is a **new registration** and is not licensed here |
+| Fewer than 50 markets priced | WITHHELD |
+
+### What this does not cover
+
+- **Subsidy persistence.** Both programmes are discretionary. Unmodelled and the dominant risk.
+- **Queue position** still binds — rebates require fills (Gate 3.0).
+- **Adverse selection** is already in `RETENTION`; the rebate is additive to it, not a substitute.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**

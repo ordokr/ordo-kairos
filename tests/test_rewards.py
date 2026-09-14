@@ -10,7 +10,14 @@ from __future__ import annotations
 import unittest
 
 from kairos.book import Book, Level
-from kairos.rewards import book_score, order_score, q_min, share_of_pool
+from kairos.rewards import (
+    book_score,
+    holding_reward,
+    maker_rebate,
+    order_score,
+    q_min,
+    share_of_pool,
+)
 
 
 class TestOrderScoreIsQuadraticInDistance(unittest.TestCase):
@@ -103,6 +110,57 @@ class TestShareOfPool(unittest.TestCase):
 
     def test_share_falls_as_competitors_arrive(self):
         self.assertGreater(share_of_pool(50.0, 50.0), share_of_pool(50.0, 500.0))
+
+
+class TestMakerRebate(unittest.TestCase):
+    """Paid on contracts you were the maker for, and **not** normalised against other makers.
+
+    The pool is ``rebateRate x total taker fees`` and the share is
+    ``your_fee_equivalent / total_fee_equivalent``, so the two scale together: per filled contract
+    the rebate is ``rebateRate x fee``, whatever anyone else does. That independence is what makes
+    this structurally different from the liquidity rewards Gate R measured as a congestion game.
+    """
+
+    def test_politics_at_the_midpoint_pays_a_quarter_of_the_fee(self):
+        # fee = 0.04 * 0.5 * 0.5 = 0.01 ; rebate = 25% of it
+        self.assertAlmostEqual(maker_rebate(0.04, 0.25, 0.50), 0.0025, places=12)
+
+    def test_crypto_pays_a_fifth_of_a_bigger_fee(self):
+        self.assertAlmostEqual(maker_rebate(0.07, 0.20, 0.50), 0.0035, places=12)
+
+    def test_it_dwarfs_the_spread_a_maker_actually_keeps(self):
+        """Gate M measured retention at 0.00039 per contract. This is the finding."""
+        self.assertGreater(maker_rebate(0.04, 0.25, 0.50), 6.0 * 0.00039)
+
+    def test_a_fee_free_market_pays_no_rebate(self):
+        """Geopolitics is fee-free, so it is excluded by arithmetic rather than by choice."""
+        self.assertEqual(maker_rebate(0.0, 0.25, 0.50), 0.0)
+
+    def test_it_is_symmetric_about_the_midpoint_and_vanishes_at_the_extremes(self):
+        self.assertAlmostEqual(maker_rebate(0.04, 0.25, 0.30),
+                               maker_rebate(0.04, 0.25, 0.70), places=12)
+        self.assertLess(maker_rebate(0.04, 0.25, 0.02), maker_rebate(0.04, 0.25, 0.50))
+
+    def test_an_invalid_price_is_refused(self):
+        with self.assertRaises(ValueError):
+            maker_rebate(0.04, 0.25, 1.5)
+
+
+class TestHoldingReward(unittest.TestCase):
+    """3.25%/yr on position value. A treasury-funded subsidy, not a market edge."""
+
+    def test_it_pays_the_annual_rate_pro_rated_to_the_holding_period(self):
+        self.assertAlmostEqual(holding_reward(1000.0, 0.0325, 365.0), 32.5, places=9)
+        self.assertAlmostEqual(holding_reward(1000.0, 0.0325, 182.5), 16.25, places=9)
+
+    def test_it_does_not_clear_the_capital_hurdle_on_its_own(self):
+        """3.25% against the 6% this repo charges for locked collateral."""
+        from kairos.costs import CONSERVATIVE
+        self.assertLess(holding_reward(1.0, 0.0325, 365.0), CONSERVATIVE.settlement_wedge_annual)
+
+    def test_negative_inputs_are_refused(self):
+        with self.assertRaises(ValueError):
+            holding_reward(-1.0, 0.0325, 365.0)
 
 
 if __name__ == "__main__":
