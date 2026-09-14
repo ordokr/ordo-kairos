@@ -148,6 +148,47 @@ class TestPriceBand(unittest.TestCase):
         self.assertTrue(CONSERVATIVE.price_in_band(CONSERVATIVE.max_price))
 
 
+class TestMakerCaptureInvertsTheSpread(unittest.TestCase):
+    """Gate M.0. Every other number in this repo is a taker number.
+
+    A taker pays ``half_spread`` to cross; a maker who buys at the bid and sells at the ask
+    **collects** it. The sign of the largest cost term flips, which is the entire reason Class M
+    exists as a separate hypothesis. What this does **not** include is adverse selection, and that
+    is the whole of maker P&L — so the number is an upper bound and the docstring says so.
+    """
+
+    def test_with_no_maker_fee_the_capture_is_exactly_half_the_spread(self):
+        self.assertAlmostEqual(CONSERVATIVE.maker_capture(0.02, 0.50), 0.01, places=12)
+
+    def test_a_maker_fee_reduces_it(self):
+        charged = CostModel(maker_fee_coeff=0.02)
+        self.assertLess(charged.maker_capture(0.02, 0.50), CONSERVATIVE.maker_capture(0.02, 0.50))
+        self.assertAlmostEqual(charged.maker_capture(0.02, 0.50),
+                               0.01 - charged.fee(0.50, maker=True), places=12)
+
+    def test_the_sign_flips_against_the_taker_on_the_same_market(self):
+        """The taker pays the spread; the maker is paid it. That inversion is the hypothesis."""
+        price, days = 0.50, 30.0
+        taker_pays = CONSERVATIVE.effective_yes_cost(price, days) - price
+        maker_earns = CONSERVATIVE.maker_capture(2.0 * CONSERVATIVE.half_spread, price)
+        self.assertGreater(taker_pays, 0.0)
+        self.assertGreater(maker_earns, 0.0)
+
+    def test_no_spread_means_nothing_to_capture(self):
+        self.assertLessEqual(CONSERVATIVE.maker_capture(0.0, 0.50), 0.0)
+
+    def test_a_fee_larger_than_the_spread_makes_capture_negative(self):
+        """Quoting is not free money. A wide fee on a tight spread is a losing quote."""
+        expensive = CostModel(maker_fee_coeff=0.5)
+        self.assertLess(expensive.maker_capture(0.002, 0.50), 0.0)
+
+    def test_an_invalid_price_or_negative_spread_is_refused(self):
+        with self.assertRaises(ValueError):
+            CONSERVATIVE.maker_capture(0.02, 1.5)
+        with self.assertRaises(CostError):
+            CONSERVATIVE.maker_capture(-0.01, 0.50)
+
+
 class TestConstruction(unittest.TestCase):
     def test_a_negative_parameter_is_refused_at_construction(self):
         for kw in ({"taker_fee_coeff": -0.01}, {"half_spread": -0.001},

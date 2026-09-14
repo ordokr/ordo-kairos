@@ -8,6 +8,70 @@ Newest pass at the top.
 
 ---
 
+## Pass 28 — Gate M.0 run; the constraint moved, and a third decision rule was miswritten (2026-09-14)
+
+Gate M.0 ran as registered. Result in [`GATEM-RESULTS.md`](GATEM-RESULTS.md). It is the **first
+dead-on-arrival check in this repository that a hypothesis has survived with room to spare**, and
+the first time the binding constraint has moved rather than been confirmed.
+
+### 28.1 The registered falsifier weighted markets, and the hypothesis is about flow
+
+The registered primary condition was *"the median in-band market must quote more than one tick."*
+Measured **2.0 ticks** — it passes. Asked of the **flow** instead: **77.4% of measured volume sits in
+markets quoted at one tick**, where an entrant cannot improve the quote and can only join the back of
+an existing queue.
+
+The disagreement was visible mid-run. A two-page sample of the volume head returned median **1.0
+tick and REFUTED**; the full sweep returned **2.0 and NOT REFUTED**, because the low-volume tail is
+where the wide spreads live. **Tick room and flow are anti-correlated** — the room is in markets
+nobody trades.
+
+**The condition is not rewritten after the fact.** The registered verdict stands; the flow-weighted
+number is reported beside it. It does not overturn NOT REFUTED — $532M/yr of flow does sit in
+markets with room, three orders of magnitude above what the floor requires — but it materially
+changes what the verdict means, and a reader given only the unweighted median would have been
+misled.
+
+### 28.2 Three gates, three decision-rule defects, zero measurement defects
+
+The pattern is now worth naming, because it is a property of this method rather than three
+accidents:
+
+| pass | gate | the measurement | the decision rule |
+|---|---|---|---|
+| 26.1 | D.0 | correct | omitted a registered exclusion (longshots) that flipped the verdict |
+| 27.1 | 4.0 | correct | tested a **rate** against a **magnitude** constraint |
+| 28.1 | M.0 | correct | weighted **markets** when the hypothesis was about **flow** |
+
+Every apparatus did what it was built to do. Every error was in the sentence that decided what the
+number meant. The protocol's discipline is overwhelmingly aimed at the measurement — null worlds,
+sealed holdouts, cluster-robust inference, pre-registration — and **none of that machinery inspects
+whether the decision rule is dimensionally right, correctly weighted, or applies the preconditions
+the protocol already carries.**
+
+The lesson extracted, and it is cheap: **a registered decision rule must state the units of its
+threshold, the weighting of its statistic, and which standing preconditions it applies.** All three
+defects above would have been caught by writing that sentence before the run rather than after.
+
+### 28.3 What the moved constraint does and does not license
+
+Gate 4.0 measured the taker ceiling at `$10.47/yr` on `$24.40` of deployable capital. Gate M.0
+measures a gross maker ceiling of `$29,280,877/yr` on the `$532M` of annual flow in markets with tick
+room. **Six orders of magnitude**, and it is a genuine structural difference rather than a bigger
+number: the taker constraint was capacity and could not be elevated by any amount of edge search.
+
+**It licenses one thing: Gate M, a measurement of adverse selection and queue position on real trade
+data.** No executor, no quoting, no capital (F3).
+
+It licenses **no claim that market making here is profitable**. Adverse selection, queue position,
+inventory risk and competitive response are all excluded and all cut against; Polymarket's maker
+rewards (advertised on 1,318 of 1,436 measured markets) are excluded and cut for. A 3.26% gross
+spread per dollar of flow is what a maker collects **if the flow is uninformed**, and the whole
+business of market making is that it is not. The excluded terms do not trim the ceiling, they decide
+its sign.
+
+---
+
 ## Pass 27 — Gate 4.0 run; a rate hurdle cannot measure a scale constraint (2026-09-14)
 
 Gate 4.0 was registered out of gate order on a Theory-of-Constraints reading: Gate 4 sits behind

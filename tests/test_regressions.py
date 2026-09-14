@@ -1050,6 +1050,48 @@ class TestPass27ARateHurdleCannotMeasureAScaleConstraint(unittest.TestCase):
         self.assertLess(recorded_class_b.net_annual_value, 0.0)
 
 
+class TestPass28ADecisionRuleMustStateItsWeighting(unittest.TestCase):
+    """Pass 28. Three gates, three decision-rule defects, zero measurement defects.
+
+    26.1 omitted a standing precondition, 27.1 tested a rate against a magnitude, 28.1 weighted
+    markets when the hypothesis was about flow. Every apparatus worked; every error was in the
+    sentence deciding what the number meant. The protocol's discipline is aimed almost entirely at
+    the measurement and inspects none of this.
+    """
+
+    def test_an_unweighted_median_can_say_room_while_the_flow_says_stuck(self):
+        """The defect as a property: it survives a rewrite of the specific statistic."""
+        import gatem
+
+        # Wide spreads in markets nobody trades; the flow is in one-tick markets. This is the
+        # measured shape -- 37.2% of markets at one tick carrying 77.4% of the volume.
+        rows = [
+            (0.001, 0.001, 0.50, 1_000_000.0),   # 1 tick, enormous flow
+            (0.001, 0.001, 0.50, 1_000_000.0),   # 1 tick, enormous flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+        ]
+        ticks = sorted(s / t for s, t, _, _ in rows)
+        self.assertGreater(ticks[len(ticks) // 2], 1.0,
+                           "unweighted, the median market has room to quote")
+        self.assertGreater(gatem.flow_share_at_one_tick(rows), 0.99,
+                           "and essentially all of the money is where it does not")
+
+    def test_the_runner_reports_the_flow_weighted_reading_beside_the_registered_one(self):
+        src = (ROOT / "gatem.py").read_text(encoding="utf-8").lower()
+        self.assertIn("share of flow", src,
+                      "gatem.py must report the flow-weighted statistic, not only the median")
+
+    def test_the_maker_capture_is_labelled_an_upper_bound_wherever_it_is_defined(self):
+        """Adverse selection is the whole of maker P&L and is excluded. That must not go quiet."""
+        from kairos.costs import CostModel
+
+        doc = (CostModel.maker_capture.__doc__ or "").lower()
+        self.assertIn("adverse selection", doc)
+        self.assertIn("upper bound", doc)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

@@ -1156,6 +1156,95 @@ candidate; it may not certify one.
 
 ---
 
+## Class M — Maker rather than taker, and Gate M.0
+
+> **REGISTERED 2026-09-14, before it was built and before any spread or volume number was
+> produced.** Runs: `python gatem.py`.
+>
+> **STATUS: RUN 2026-09-14 — NOT REFUTED.** 4,200 open markets swept, 1,436 in band and quotable.
+> Median spread **2.0 ticks**, so the registered condition passes. Gross capture **3.2564%** per
+> dollar of flow; ceiling **$29.3M/yr** on the **$532M/yr** of flow in the 902 markets that have
+> tick room, against a $104.70 floor.
+>
+> **The registered condition was the wrong weighting for its own hypothesis.** It weights markets
+> equally; the hypothesis is about flow, and **77.4% of flow sits in one-tick markets** where an
+> entrant cannot improve the quote. A two-page sample of the volume head returned median 1.0 tick
+> and REFUTED. Both readings are reported; the condition is not rewritten after the fact
+> (`CORRECTIONS.md` Pass 28.1).
+>
+> **The constraint moved**: taker capacity was $24.40 and immovable; maker capacity is flow, and the
+> binding constraint becomes **adverse selection and queue position**, which this gate does not
+> measure. It licenses **Gate M** — an adverse-selection measurement on real trade data — and
+> nothing else. It licenses no claim that market making here is profitable. See
+> [`GATEM-RESULTS.md`](GATEM-RESULTS.md).
+
+### Why this class exists
+
+Gate 4.0 measured the taker ceiling at **$10.47/yr** on **$24.40** of deployable capital and
+established that capacity is the binding constraint. Every measurement in this repository is a
+**taker** measurement: the cost model's `half_spread` is charged as a cost on every crossing, and
+`maker_fee_coeff` has sat at `0.0` unused.
+
+A maker inverts the largest cost term — the spread becomes revenue rather than expense — and, more
+importantly, **changes what the constraint is**. A taker's opportunity set is *visible mispricings*,
+which measured $24.40. A maker's is *flow that crosses their quote*, which scales with venue volume.
+That is a different quantity, not a larger one, so Class M may not inherit any of Class B's or
+Class C's licences and its capacity must be measured on its own terms.
+
+### The hypothesis, stated so it can fail
+
+> **H:** On the reachable open universe, in-band markets quote a spread wide enough for an entrant
+> to improve on, and the resulting gross capture per unit of flow is large enough that a plausible
+> share of venue volume clears the hurdle.
+
+### Gate M.0 — the dead-on-arrival check
+
+**The primary falsifier is tick room, not spread size.** A market already quoted at **one tick**
+offers an entrant nothing: the quote cannot be improved, so the only way in is the back of an
+existing queue, and queue position — not spread — then decides whether anything fills. An aggregate
+spread that looks attractive while sitting entirely in one-tick markets is a spread that is not
+available to a new participant.
+
+| decision | value | why this |
+|---|---|---|
+| **Primary condition** | the median in-band market must quote **more than one tick** | Room to improve the quote is the precondition for every other maker number meaning anything |
+| Price band | `price_in_band`, **applied** | The exclusion Pass 26 found unenforced in every scanner. A 1-tick spread on a 0.4c contract is a 50% relative half-spread and is an artefact, not an opportunity |
+| Gross capture | `spread / 2`, net of the maker fee, per contract | What a maker earns buying at bid and selling at ask, **before adverse selection** |
+| Floor | the maker ceiling must exceed the measured taker ceiling (**$10.47/yr**) by an **order of magnitude** | Absolute and internally sourced, not a rate — `CORRECTIONS.md` Pass 27.1. Below 10x, a structural change has not changed the structure; it has moved a number while adding machinery |
+| Flow | **inverted, never invented** | Venue flow that would cross *our* quote is unobservable without quoting. The gate reports the annual flow required to clear the floor; it does not assume a share |
+| Volume units | `volumeNum` **assumed dollars, unverified** | Reported at both readings, as `scanc.py` does with the Kalshi fee (A6, G3) |
+
+### Pre-committed expectation, recorded before the run
+
+**This gate is expected to pass, and passing it is expected to mean very little.** Polymarket does
+real volume and quoted spreads on liquid contracts are visible; an aggregate gross-capture figure
+will almost certainly look large next to $10.47. That is why the primary condition is tick room
+rather than spread size — a condition that can actually fire — and why the decision rule below
+licenses only a measurement and never a build.
+
+If this gate is reported as evidence that market making is profitable, it has been misread.
+**Everything that determines maker profitability is excluded from it.**
+
+### What is deliberately excluded, and which way each cuts
+
+| excluded | direction |
+|---|---|
+| **Adverse selection** — you are filled preferentially when the price is about to move against you | Against. This is the whole of maker P&L and it is unmeasured |
+| **Queue position and competition** — existing makers are already there | Against |
+| **Inventory risk** — an unbalanced book is a directional position | Against |
+| **Polymarket's maker rewards** (`rewardsMaxSpread`, `rewardsMinSize` are published) | **For.** So a REFUTED verdict here refutes **spread capture**, not market making with rewards, and must not be reported as the latter |
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Median in-band spread is **one tick or less** | **REFUTED.** There is no room for an entrant to quote; spread capture is unavailable whatever its size. Class M closes |
+| Tick room exists **and** the ceiling clears 10x the taker ceiling | **NOT REFUTED.** Licenses **Gate M — an adverse-selection and queue-position measurement** on real trade data. It licenses no executor, no quoting, and no capital (F3) |
+| Tick room exists, ceiling below 10x | **REFUTED.** The structural change did not change the structure |
+| Nothing prices | WITHHELD as apparatus (A1, G12) |
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**

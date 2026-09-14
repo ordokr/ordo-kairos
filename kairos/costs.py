@@ -114,6 +114,27 @@ class CostModel:
         mid = _require_price(mid, "mid")
         return self.effective_yes_cost(1.0 - mid, days_to_resolution, maker=maker)
 
+    def maker_capture(self, quoted_spread: float, traded_price: float) -> float:
+        """Price units a **maker** collects per contract, before adverse selection.
+
+        A maker who buys at the bid and sells at the ask collects the whole spread over a two-fill
+        round trip, so ``quoted_spread / 2`` per contract of own volume, less the maker fee on the
+        fill. This is the one place in the model where the spread is **revenue**: everywhere else it
+        is ``half_spread``, charged as the cost of crossing.
+
+        .. warning::
+
+           **An upper bound, and the excluded term is the whole business.** Adverse selection — being
+           filled preferentially when the price is about to move against you — is not here, and
+           neither is queue position, competition from incumbent makers, or inventory risk. All three
+           cut against. Polymarket's published maker rewards cut for. Use this to *refuse* a maker
+           hypothesis cheaply (``docs/PROTOCOL.md`` Gate M.0); it can never certify one.
+        """
+        if quoted_spread < 0.0:
+            raise CostError(f"quoted_spread must be non-negative, got {quoted_spread!r}")
+        price = _require_price(traded_price, "traded_price")
+        return quoted_spread / 2.0 - self.fee(price, maker=True)
+
     def round_trip_drag(self, mid: float, days_to_resolution: float) -> float:
         """Total cost of taking YES and NO at ``mid`` - the width of the no-trade band.
 
