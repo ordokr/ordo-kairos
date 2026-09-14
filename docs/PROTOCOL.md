@@ -1874,9 +1874,162 @@ mode that no amount of measurement can hedge.
 
 ### What this does not cover
 
-- **Subsidy persistence.** Both programmes are discretionary. Unmodelled and the dominant risk.
+- **Subsidy persistence.** Both programmes are discretionary. Unmodelled here and the dominant risk;
+  now registered separately as **Class S** below. Gate M2's verdict does not wait on it and does not
+  borrow from it.
 - **Queue position** still binds — rebates require fills (Gate 3.0).
 - **Adverse selection** is already in `RETENTION`; the rebate is additive to it, not a substitute.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
+## Class S — Subsidy persistence, and Gate S
+
+> **REGISTERED 2026-09-14, before `gates.py` was written and before any cadence, direction or
+> hazard figure was computed.** Runs: `python gates.py`.
+>
+> **STATUS: NOT RUN.**
+
+### Why this class exists
+
+Gate M2 returned **NOT REFUTED at $139,450/yr**, and **77% of the gross is the maker rebate**. The
+registered consequence was that subsidy persistence becomes its own registration. This is it.
+
+### The objection to this gate existing at all, addressed before anything is built
+
+**Subsidy persistence is a forecast about a private company's future business decision.** Polymarket
+does not publish its treasury, its subsidy budget, or its intentions. No amount of archaeology on
+schedule version strings turns that into a measurement, and a gate that implied otherwise would
+manufacture the appearance of evidence — the precise failure mode this protocol exists to prevent.
+
+So **this gate does not forecast persistence, and any output claiming to is void.** It measures three
+observable things and answers a different, answerable question:
+
+> **How long must the subsidy hold for the strategy to pay back — and is that horizon short or long
+> compared with the longest interval over which the venue's terms have actually been observed to
+> hold?**
+
+The first half is arithmetic. The second half is a measured interval with a named uncertainty. The
+comparison is a *ratio of two quantities in months*, which is commensurable (Pass 27.1) and can fail.
+
+**`NO VERDICT` is a first-class and expected outcome here**, per `kairos.validity` and AXIOMS
+G12/A1: an instrument's ceiling is not the world's floor, and "the apparatus cannot see this" is a
+result, not a failure.
+
+### The survivorship problem, named before it can be laundered
+
+**Every live schedule is alive. There are zero observed withdrawals.** A cadence measured on a
+programme that has never been withdrawn cannot estimate the hazard of withdrawal — it can only bound
+it. The registered treatment is the **rule of three**: with zero events in `n` independent
+observation units, the 95% upper bound on the per-unit event probability is `≈ 3/n`.
+
+The gate therefore reports an **upper bound on the annual withdrawal hazard**, never a point
+estimate, and never a survival probability. If the bound is uninformative (wide enough to admit
+near-certain withdrawal), that is the finding and it is reported as such.
+
+### What is already known, declared now so it cannot be re-sold as a finding
+
+From the Gate M2 sweep (1,445 markets, 11 live `feeSchedule` variants) — **already collected, already
+published in [`GATEM2-RESULTS.md`](GATEM2-RESULTS.md)**:
+
+| schedule | feeRate | rebateRate | maker's take = `rate x rebateRate` |
+|---|---:|---:|---:|
+| `sports_fees_v2` | 0.03 | 25% | **0.0075** |
+| `sports_fees_v3` | 0.05 | 15% | **0.0075** |
+| `crypto_fees_v2` | 0.07 | 20% | 0.0140 |
+| `politics_fees`, `finance_prices_fees`, `tech_fees`, `mentions_fees` | 0.04 | 25% | 0.0100 |
+| `weather_fees`, `culture_fees`, `economics_fees`, `general_fees` | 0.05 | 25% | 0.0125 |
+
+**The two sports schedules carry an identical maker take to four decimal places** while the taker fee
+differs by 67%. If `v2 -> v3` is a temporal revision, the venue raised the taker fee and returned the
+maker exactly what it returned before — a **repricing that took the whole increase for the house and
+left the maker untouched**.
+
+**That conditional is the entire gate, and it is not yet established.** Both schedules are live
+simultaneously (235 and 523 markets), which is equally consistent with two coexisting variants for
+different sports products and no temporal succession at all. Determining which is S1's job. Stating
+the invariant here means a run that confirms it is confirming a **pre-registered** observation rather
+than announcing a discovery (AXIOMS G14 — a pattern found by the process that went looking for it
+proves nothing on its own).
+
+### The hypothesis, stated so it can fail
+
+> **H:** The strategy's payback horizon is shorter than the interval over which the venue's maker
+> terms have been observed to hold, and observed revisions have not cut the maker's take.
+
+### The three measurements
+
+**S1 — Cadence.** Enumerate live schedules; test whether version suffixes are **temporal succession**
+by comparing the market-creation-date distributions of each version cohort. Succession requires
+cohorts that are *separated*, not interleaved. If interleaved, there is no succession and no cadence.
+Report the observation window per schedule in months, and total **schedule-months** observed.
+
+**S2 — Direction.** For each established succession pair, compute `Δ(rate x rebateRate)` — the change
+in the maker's per-contract take. **Weighted by rebate dollars at risk in the Gate M2 run, not by
+market count** (Pass 28.1: weighting by the wrong unit passed a condition that the flow failed).
+
+**S3 — Reference class.** Comparable subsidy programmes — exchange maker-rebate schemes, DeFi
+liquidity mining, prediction-market maker incentives — and their observed lifetimes at constant
+terms. Graded per [`EVIDENCE.md`](EVIDENCE.md). **Expected to be grade B or U**, i.e. hypothesis
+source only and never a planning input (A3). It is registered so that its weakness is on the record
+before it is consulted, not argued about afterwards.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **months**, on both sides of the comparison. Required-payback-months vs observed-stability-months |
+| **Weighting** | rebate **dollars at risk** from the Gate M2 run, never market count (Pass 28.1) |
+| **Preconditions** | the Gate M2 universe: longshot band (Pass 26.1), tick room > 1, `feesEnabled`. A fee-free market has no subsidy to lose and is out of scope by arithmetic |
+| **Payback model** | months for Gate M2's net to repay build cost **plus** the 6% capital hurdle already charged in Gate M2 |
+| **Build cost (C11)** | a **curve**, not a point: 0 / 1 / 3 / 6 person-months at a rate stated in the runner. A design variable is not held at one value |
+| **Hazard** | **upper bound only**, by rule of three on schedule-months with zero withdrawals. Never a point estimate |
+| Floor | inherited: the strategy must still clear **$104.70/yr** after the payback period, or the question is moot |
+
+### Pre-committed expectation
+
+Two of nine distinct schedule families carry version suffixes, so **if** succession is established
+the cadence is likely on the order of **months, not years** — and payback at any non-trivial build
+cost will land in the same range. The expectation is therefore that **the ratio is near 1 and the
+gate does not cleanly separate**, that the hazard bound is **wide and uninformative**, and that the
+honest outcome is **NO VERDICT on persistence** with a usable number only for required horizon.
+
+Recorded before the numbers. **If the run produces a clean separation in either direction, that is
+the surprise, and Pass discipline applies: the rule below is not edited afterwards.**
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Required payback exceeds observed stability at **every** build cost including zero | **REFUTED.** The strategy cannot pay back inside any interval the terms have been observed to hold. Class M2 is re-labelled a decaying promotion |
+| Weighted-majority of rebate dollars sit under schedules whose revisions **cut** the maker's take | **REFUTED as durable.** Same re-labelling |
+| Payback well inside observed stability **and** no revision cut the maker's take | **NOT REFUTED.** Class M2 stays subsidy-dependent — never an edge — and the binding constraint moves to execution |
+| Version suffixes are **not** temporal succession, or fewer than 2 succession pairs | **NO VERDICT.** The apparatus cannot measure cadence. Not a failure of the hypothesis, and **not licence to proceed as if it had passed** |
+| Hazard bound admits near-certain withdrawal | Reported as the dominant term whatever else the gate finds |
+
+### Null gate — required before the estimator touches real schedules
+
+Per AXIOMS A7, the estimator must find nothing in worlds built to contain nothing:
+
+- **No-structure world:** schedules with no version suffixes. Must report *no cadence*, not a cadence.
+- **Interleaved world:** version suffixes whose creation dates are fully interleaved. Must report
+  *no succession* — this is the confound the real data may contain, so the estimator must fail it.
+- **Churn world:** schedules revised at random with a maker take drawn independently each time. Must
+  **not** report stability.
+- **G14 guard:** the null worlds are generated by a process that does **not** share the detector's
+  assumptions about how version strings encode order.
+
+Pass requires false-positive rate inside the exact binomial tail **and** power ≥ `POWER_FLOOR`.
+
+### What this does not cover
+
+- **The venue's finances, budget, and intentions.** Unobservable. The dominant term, and no part of
+  this gate estimates it.
+- **Withdrawal without warning.** A single decision has no cadence; the rule-of-three bound is the
+  only honest statement about it, and it is a bound.
+- **Regulatory change** to either programme.
+- **Competitive response.** The rebate does not dilute, but the spread does, and Gate M2 already
+  showed the spread is only 23% of the gross.
 - **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
 
 ---
