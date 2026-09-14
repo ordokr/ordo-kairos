@@ -1370,6 +1370,43 @@ class TestPass34ATakesAreNotComparableAcrossExponents(unittest.TestCase):
         self.assertGreater(weighted_instability(churn, [1.0, 1.0]), 0.4)
 
 
+class TestPass35ADesignVariableIsNotHeldAtOneValue(unittest.TestCase):
+    """Pass 35.1: Gate S's payback table varied build cost and froze posted size at the largest
+    rung, reporting "6.2 months, clears" as though it were general. At $19,500 of capital one
+    person-month of build takes 17.8 months against a subsidy observed to exist for 14.4."""
+
+    def test_the_payback_table_varies_size_as_well_as_build_cost(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("M2_BY_SIZE", src)
+        self.assertNotIn("M2_NET_ANNUAL", src, "a scalar net freezes the size dimension")
+        self.assertIn("for size, cap, net in M2_BY_SIZE", src)
+
+    def test_the_measured_curve_carries_more_than_one_rung(self):
+        import gates
+
+        self.assertGreaterEqual(len(gates.M2_BY_SIZE), 4)
+        self.assertEqual(len({s for s, _, _ in gates.M2_BY_SIZE}), len(gates.M2_BY_SIZE))
+
+    def test_small_capital_cannot_repay_a_build_inside_the_observed_programme_life(self):
+        """The finding the frozen size hid. 14.4 months is the whole observed fee-programme span."""
+        import gates
+
+        observed_life_months = 14.4
+        _, capital, net = gates.M2_BY_SIZE[0]
+        payback = gates.PERSON_MONTH_COST / (net / 12.0)
+        self.assertLess(capital, 10_000.0)
+        self.assertGreater(payback, observed_life_months,
+                           "at the smallest measured size one person-month of build must not "
+                           "appear to repay inside the subsidy's observed life")
+
+    def test_return_on_capital_saturates_rather_than_scaling_forever(self):
+        """Taker flow beyond the queue is finite (Gate 3.0), so the last dollar earns least."""
+        import gates
+
+        rocs = [net / cap for _, cap, net in gates.M2_BY_SIZE]
+        self.assertLess(rocs[-1], rocs[0], "the largest rung must not out-earn the smallest")
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

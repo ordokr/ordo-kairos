@@ -8,6 +8,47 @@ Newest pass at the top.
 
 ---
 
+## Pass 35 — Gate S's payback table held size at one value, and it hid the answer (2026-09-14)
+
+### 35.1 A C11 violation inside the analysis whose registration demanded a curve
+
+Class S registered build cost as "**a curve, not a point**: 0 / 1 / 3 / 6 person-months. A design
+variable is not held at one value." The runner obeyed that for build cost and then **held posted size
+fixed at 2,000 contracts** — the largest rung of Gate M2's own size curve, requiring **$390,000** of
+capital. Size is a design variable too, and C11 does not stop applying because the registration
+happened to name only one of them.
+
+Restoring it changes what the gate says to anyone without $390,000:
+
+| size | capital | net/yr | ROC | 1mo build | 3mo build | 6mo build |
+|---:|---:|---:|---:|---:|---:|---:|
+| 25 | $4,875 | $2,024 | 41.5% | **71mo** | **213mo** | **427mo** |
+| 100 | $19,500 | $8,096 | 41.5% | **18mo** | **53mo** | **107mo** |
+| 500 | $97,500 | $40,257 | 41.3% | 3.6mo | 10.7mo | **21mo** |
+| 2,000 | $390,000 | $139,450 | 35.8% | 1.0mo | 3.1mo | 6.2mo |
+
+**Bold exceeds the 14.4-month observed life of the entire fee programme.** At $19,500 of capital, one
+person-month of build takes **17.8 months** to repay — longer than the subsidy has been observed to
+exist at all. At $4,875 it takes **71 months**.
+
+The single figure the first run reported — "payback 6.2 months, clears" — was true only at the top
+rung, and it read as a general finding. It was not.
+
+### 35.2 Return on capital is flat and then saturates, which the single row also hid
+
+ROC holds at ~41.5% up to roughly $100k and falls to 35.8% at $390k: the last $292,500 of capital
+earns **33.9%** marginal. Available taker flow beyond the queue is finite (Gate 3.0's fill model), so
+capital stops buying fills proportionally. A one-row table cannot show a saturation curve.
+
+### 35.3 What does not change
+
+The verdict. Gate S still returns **NO VERDICT** on persistence for the registered reason — one
+succession pair against a minimum of two. The payback table was never load-bearing for the verdict
+([Pass 34.5](#): its `REFUTED` rung is vacuous), which is *why* the defect survived the first reading:
+nothing downstream depended on it. It is decision-relevant to an operator regardless.
+
+---
+
 ## Pass 34 — Gate S run; the runner disagreed with its own registration (2026-09-14)
 
 Class S registered and run. Result in [`GATES-RESULTS.md`](GATES-RESULTS.md). **NO VERDICT on

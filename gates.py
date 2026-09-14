@@ -36,8 +36,11 @@ STABILITY_TOL = 0.05
 PERMUTATIONS = 400
 NULL_REPS = 200
 
-#: Gate M2's measured net at 2,000 posted contracts, capital hurdle already charged.
-M2_NET_ANNUAL = 139_450.0
+#: Gate M2's measured `(posted size, capital, net/yr)`, capital hurdle already charged.
+#: Size is a curve, not a point (C11) - the payback question has a different answer at each rung,
+#: and quoting only the largest was the defect recorded as Pass 35.
+M2_BY_SIZE = ((25, 4_875.0, 2_024.0), (100, 19_500.0, 8_096.0),
+              (500, 97_500.0, 40_257.0), (2_000, 390_000.0, 139_450.0))
 
 #: A generic contract rate. A parameter of the payback curve, not a claim about anybody.
 PERSON_MONTH_COST = 12_000.0
@@ -264,19 +267,38 @@ def main() -> int:
     print(f"      GOVERNING annual withdrawal hazard bound: <= {governing:.1%}")
     print("      (the programme-level count governs: one decision withdraws every schedule)")
 
-    monthly_net = M2_NET_ANNUAL / 12.0
+    # C11 twice over: build cost is a curve AND so is size. Holding size at 2,000 contracts was a
+    # defect in this gate's first run - it hid that a small operator cannot repay any build cost
+    # inside the window the subsidy has been observed to exist (CORRECTIONS.md Pass 35).
     stability = prog_months
-    print(f"\n      {'build':>7} {'cost':>10} {'payback':>10} {'vs stability':>14}")
-    for bm in BUILD_MONTHS:
-        cost = bm * PERSON_MONTH_COST
-        payback = cost / monthly_net
-        print(f"      {bm:>5.0f}mo {'$' + format(cost, ',.0f'):>10} {payback:>8.1f}mo "
-              f"{'clears' if payback < stability else 'EXCEEDS':>14}")
+    print(f"\n      Payback in months. 'X' exceeds the {stability:.1f}-month observed programme")
+    print(f"      life, i.e. the build never repays inside any window the subsidy has been seen")
+    print(f"      to hold. Capital is Gate M2's, at ${PERSON_MONTH_COST:,.0f} per person-month.")
+    print(f"\n      {'size':>6} {'capital':>10} {'net/yr':>9} {'ROC':>6}" +
+          "".join(f"{str(int(b)) + 'mo build':>12}" for b in BUILD_MONTHS if b > 0))
+    for size, cap, net in M2_BY_SIZE:
+        monthly = net / 12.0
+        cells = ""
+        for bm in BUILD_MONTHS:
+            if bm <= 0:
+                continue
+            pb = bm * PERSON_MONTH_COST / monthly
+            cells += f"{format(pb, '.1f') + 'mo' + ('  X' if pb > stability else '   '):>12}"
+        print(f"      {size:>6,} {'$' + format(cap, ',.0f'):>10} "
+              f"{'$' + format(net, ',.0f'):>9} {net / cap:>5.1%}{cells}")
+
+    smallest = M2_BY_SIZE[0]
+    print(f"\n      At the smallest measured size (${smallest[1]:,.0f} of capital) even ONE")
+    print(f"      person-month of build takes "
+          f"{PERSON_MONTH_COST / (smallest[2] / 12.0):.0f} months to repay.")
 
     print(f"\n{'=' * 94}\nVERDICT\n{'=' * 94}")
     print(f"  observed stability (programme age) : {prog_months:.1f} months")
     print(f"  payback at 6 person-months of build: "
-          f"{6 * PERSON_MONTH_COST / monthly_net:.1f} months")
+          f"{6 * PERSON_MONTH_COST / (M2_BY_SIZE[-1][2] / 12.0):.1f} months at "
+          f"{M2_BY_SIZE[-1][0]:,} contracts / ${M2_BY_SIZE[-1][1]:,.0f}, but "
+          f"{6 * PERSON_MONTH_COST / (M2_BY_SIZE[0][2] / 12.0):.0f} months at "
+          f"{M2_BY_SIZE[0][0]:,}")
     print(f"  annual withdrawal hazard           : <= {governing:.1%} (bound, not estimate)")
 
     # The registered rule: "Version suffixes are not temporal succession, OR FEWER THAN 2

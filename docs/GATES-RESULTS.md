@@ -100,22 +100,35 @@ evidence supports.
 bound admits near-certain withdrawal it is "reported as the dominant term whatever else the gate
 finds", and it is: the data cannot rule out that the subsidy disappears within the year.
 
-## 5. Payback
+## 5. Payback — the answer depends entirely on how much capital you have
 
-Gate M2's net of $139,450/yr is $11,621/month, with the 6% capital hurdle already charged.
+Build cost **and** posted size are both design variables (C11). The first version of this table held
+size at 2,000 contracts and reported a single reassuring number; restoring the size curve
+([Pass 35](CORRECTIONS.md)) shows that number was true only at the top rung.
 
-| build | cost @ $12,000/person-month | payback | vs 14.4mo observed span |
-|---:|---:|---:|---|
-| 0 | $0 | 0.0mo | clears |
-| 1mo | $12,000 | 1.0mo | clears |
-| 3mo | $36,000 | 3.1mo | clears |
-| 6mo | $72,000 | 6.2mo | clears |
+Capital is Gate M2's, at $12,000 per person-month of build:
 
-Every rung clears, which sounds like good news and is mostly an artefact: **the registered `REFUTED`
-condition — "payback exceeds observed stability at every build cost including zero" — is vacuous**,
-because payback at zero build cost is zero months and can never exceed anything. Recorded rather than
-quietly repaired ([Pass 34.5](CORRECTIONS.md)). The gate's discriminating power sits entirely in the
-pair-count test and the direction test, not here.
+| size | capital | net/yr | ROC | 1mo build | 3mo build | 6mo build |
+|---:|---:|---:|---:|---:|---:|---:|
+| 25 | $4,875 | $2,024 | 41.5% | **71mo** | **213mo** | **427mo** |
+| 100 | $19,500 | $8,096 | 41.5% | **18mo** | **53mo** | **107mo** |
+| 500 | $97,500 | $40,257 | 41.3% | 3.6mo | 10.7mo | **21mo** |
+| 2,000 | $390,000 | $139,450 | 35.8% | 1.0mo | 3.1mo | 6.2mo |
+
+**Bold exceeds the 14.4-month observed life of the whole fee programme** — the build never repays
+inside any window the subsidy has actually been seen to hold.
+
+Two things this makes visible that one row could not:
+
+- **Below roughly $100,000 of capital, build cost dominates the strategy.** At $19,500, a single
+  person-month of work takes 17.8 months to repay against a subsidy observed to exist for 14.4.
+- **Return on capital is flat at ~41.5% and then saturates** — the last $292,500 earns 33.9%
+  marginal, because taker flow beyond the queue is finite (Gate 3.0's fill model).
+
+None of this is load-bearing for the verdict. The registered `REFUTED` rung — "payback exceeds
+observed stability at every build cost **including zero**" — is vacuous, since payback at zero build
+cost is zero ([Pass 34.5](CORRECTIONS.md)). The gate's discriminating power sits in the pair-count
+and direction tests. The payback curve is decision-relevant to an operator and decides nothing here.
 
 ## 6. Why the apparatus cannot answer the question
 
