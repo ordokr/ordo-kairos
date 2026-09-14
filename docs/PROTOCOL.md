@@ -1888,7 +1888,31 @@ mode that no amount of measurement can hedge.
 > **REGISTERED 2026-09-14, before `gates.py` was written and before any cadence, direction or
 > hazard figure was computed.** Runs: `python gates.py`.
 >
-> **STATUS: NOT RUN.**
+> **STATUS: RUN 2026-09-14 — NO VERDICT on persistence**, the pre-committed outcome reached for the
+> pre-committed reason: **1** succession pair established against a registered minimum of **2**. Null
+> gate passed 6/6. The annual withdrawal hazard is bounded only at **≤94.5%** on the programme-level
+> count, which is close to no constraint at all. Full result in [`GATES-RESULTS.md`](GATES-RESULTS.md).
+>
+> **Recorded but not a verdict:** the single established revision (`sports_fees_v2 -> v3`, AUC
+> 1.0000, p=0.0025) held the maker's take **exactly flat at 0.0075** while the taker fee rose 67%.
+> One observation is not a cadence. **A NO VERDICT is not a pass**, and Class M2 may not be treated
+> as having cleared a persistence test.
+
+### Amendment 1 — four defects in this registration, recorded 2026-09-14 after the run
+
+Recorded rather than silently edited. Details in [`CORRECTIONS.md`](CORRECTIONS.md) Pass 34.
+
+1. **Preconditions.** The band and tick-room filters are *tradeability* filters and tradeability
+   correlates with recency; applying them to a creation-date measurement would manufacture
+   separation. Only `feesEnabled` applies to S1. The Gate M2 universe weights S2, as intended.
+2. **Hazard unit.** Rule-of-three on **schedule-months** counts twelve consequences of one decision
+   as twelve independent trials, making the bound 3.4x tighter than the evidence supports.
+   **Programme-months governs**; both are reported.
+3. **A vacuous rung.** "Payback exceeds observed stability at every build cost **including zero**"
+   can never fire, because payback at zero build cost is zero. The gate's discriminating power is
+   the pair-count and direction tests; the payback curve is descriptive.
+4. **Comparability.** Takes are comparable only at equal price exponent. `crypto_15_min` is live at
+   `exponent: 2` and is not on the same scale as any other schedule.
 
 ### Why this class exists
 

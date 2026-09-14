@@ -8,6 +8,84 @@ Newest pass at the top.
 
 ---
 
+## Pass 34 — Gate S run; the runner disagreed with its own registration (2026-09-14)
+
+Class S registered and run. Result in [`GATES-RESULTS.md`](GATES-RESULTS.md). **NO VERDICT on
+persistence** — 1 succession pair against a registered minimum of 2 — with the annual withdrawal
+hazard bounded only at **≤94.5%**.
+
+### 34.1 The verdict branch tested for zero pairs where the registration said fewer than two
+
+The registered rule reads: *"Version suffixes are not temporal succession, **or fewer than 2
+succession pairs** → NO VERDICT."* The runner's first version tested `if not pairs:` — zero — and so
+reported **NOT REFUTED** on a single pair. The registered answer is NO VERDICT.
+
+Caught by reading the registration against the output before anything was recorded. The result would
+have been a gate that passed itself on one observation, which is the precise failure the pair
+minimum was written to prevent.
+
+**This is Pass 33.5 again, one gate later**: the code did not implement the registered sentence.
+The guard is now `len(pairs) < MIN_PAIRS` with `MIN_PAIRS = 2` named as a constant, and a regression
+test asserts the runner contains the comparison rather than a truthiness check.
+
+### 34.2 A live schedule uses a different price exponent, so its take was not comparable
+
+`maker_take` strips the `(p(1-p))^exponent` factor and its docstring asserted that factor "is
+identical across schedules". It is not: **`crypto_15_min` is live at `exponent: 2`**, where the fee
+is `rate x (p(1-p))^2`. Its stripped product of `0.25 x 0.20 = 0.0500` is not a larger take than
+`crypto_fees_v2`'s `0.0140` — it is a quantity in **different units**.
+
+Nothing in this run's verdict depended on it (`crypto_15_min` has one market and one version), but a
+future succession pair spanning an exponent change would have produced a meaningless delta with no
+warning. Fixed with `take_pair`, which **refuses** a comparison across differing exponents and names
+the exponent in the message so it is not mistaken for a data error.
+
+### 34.3 The registered preconditions would have biased the measurement they were applied to
+
+The registration set preconditions as "the Gate M2 universe: longshot band, tick room > 1,
+`feesEnabled`". The band and tick-room filters are **tradeability** filters, and tradeability
+correlates with recency — applying them to a *creation-date* cohort measurement selects on a variable
+correlated with the thing being measured and would manufacture separation.
+
+Amendment: only `feesEnabled` applies to the cohort measurement (S1). The Gate M2 universe is used
+solely to **weight** the revision test (S2), which is what the registration wanted it for.
+
+### 34.4 The registered hazard unit treated one decision as twelve independent trials
+
+The registration specified rule-of-three on **schedule-months**. One decision withdraws every
+schedule at once, so summing across twelve schedules counts twelve consequences of a single choice as
+twelve independent observations.
+
+| counting | n | annual bound |
+|---|---:|---:|
+| Programme-months (correct) | 14.4 | **≤ 94.5%** |
+| Schedule-months (registered) | 113.7 | ≤ 27.6% |
+
+The registered unit makes the bound look **3.4x tighter** than the evidence supports. Amendment: both
+are reported and the **programme-level count governs**. Adding a charge that cuts against the
+hypothesis is permitted; the reverse would not be.
+
+### 34.5 One rung of the registered decision rule is vacuous by construction
+
+The rule's `REFUTED` condition reads "required payback exceeds observed stability **at every build
+cost including zero**". Payback at zero build cost is zero months and cannot exceed anything, so that
+rung can never fire.
+
+Recorded rather than repaired after seeing the result. The gate's discriminating power rests entirely
+on the pair-count test and the direction test; the payback curve is descriptive, not decisive, and
+Class S's registration should not have implied otherwise.
+
+### 34.6 The universe is open markets only, so cohort history is truncated by resolution
+
+`open_universe` returns open markets. Every cohort's oldest member is bounded by what has not yet
+resolved, and an entire earlier schedule version can be invisible — `crypto_fees_v2` implies a `v1`
+that appears nowhere in 3,564 markets, almost certainly because its markets have all resolved.
+
+This is an apparatus ceiling, not a fact about the world (AXIOMS G12), and it reinforces the NO
+VERDICT rather than arguing around it.
+
+---
+
 ## Pass 33 — Gate M2 run; a fee coefficient that was wrong everywhere, in the safe direction (2026-09-14)
 
 Class M2 registered and run. Result in [`GATEM2-RESULTS.md`](GATEM2-RESULTS.md). **NOT REFUTED:

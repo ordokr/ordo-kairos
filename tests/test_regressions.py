@@ -1304,6 +1304,72 @@ class TestPass33ASubsidyMustPayForTheCapitalItRequires(unittest.TestCase):
         self.assertEqual(maker_rebate(0.0, 0.25, 0.5), 0.0, "no fee, no rebate")
 
 
+class TestPass34ARunnerMustImplementItsOwnRegisteredRule(unittest.TestCase):
+    """Pass 34.1: the registered rule said "fewer than 2 succession pairs -> NO VERDICT"; the
+    runner tested `if not pairs:` and reported NOT REFUTED on one. Pass 33.5 one gate later."""
+
+    def test_the_pair_minimum_is_a_named_constant_compared_with_less_than(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("MIN_PAIRS = 2", src)
+        self.assertIn("len(pairs) < MIN_PAIRS", src)
+        self.assertNotIn("if not pairs:", src,
+                         "a truthiness check cannot express a minimum of two")
+
+    def test_tradeability_filters_are_absent_from_the_cohort_sweep(self):
+        """Pass 34.3: band and tick-room filters select on recency and would manufacture
+        the separation the gate is trying to detect."""
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        sweep = src.split("[2/4]")[1].split("[3/4]")[0]
+        self.assertNotIn("price_in_band", sweep)
+        self.assertNotIn("no_tick_room", sweep)
+        self.assertIn("feesEnabled", sweep)
+
+
+class TestPass34AHazardBoundMayNotAssumeIndependence(unittest.TestCase):
+    """Pass 34.4: one decision withdraws every schedule, so schedule-months counts twelve
+    consequences of a single choice as twelve trials. The wider bound governs."""
+
+    def test_more_assumed_units_always_produce_a_tighter_and_therefore_wronger_bound(self):
+        from kairos.persistence import annual_hazard_bound, rule_of_three
+
+        programme = annual_hazard_bound(rule_of_three(14))
+        schedules = annual_hazard_bound(rule_of_three(113))
+        self.assertGreater(programme, schedules)
+        self.assertGreater(programme, 0.90, "14 months of observation bounds almost nothing")
+
+    def test_the_runner_lets_the_programme_level_count_govern(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("GOVERNING", src)
+        self.assertIn("prog_months", src)
+
+    def test_no_function_in_the_module_returns_a_survival_probability(self):
+        """Zero observed events bounds a hazard; it never estimates one."""
+        from kairos import persistence
+
+        for name in persistence.__all__:
+            self.assertNotIn("surviv", name.lower())
+            self.assertNotIn("probab", name.lower())
+
+
+class TestPass34ATakesAreNotComparableAcrossExponents(unittest.TestCase):
+    """Pass 34.2: `crypto_15_min` is live at `exponent: 2`, where the fee is `rate x (p(1-p))^2`."""
+
+    def test_a_cross_exponent_comparison_is_refused_not_computed(self):
+        from kairos.persistence import take_pair
+
+        with self.assertRaises(ValueError):
+            take_pair((0.03, 0.25, 1), (0.25, 0.20, 2))
+        self.assertEqual(take_pair((0.03, 0.25, 1), (0.05, 0.15, 1)), (0.0075, 0.0075))
+
+    def test_direction_and_instability_remain_two_statistics(self):
+        """The signed mean averages churn to zero; only the unsigned one survives it."""
+        from kairos.persistence import weighted_direction, weighted_instability
+
+        churn = [(0.010, 0.015), (0.010, 0.005)]
+        self.assertAlmostEqual(weighted_direction(churn, [1.0, 1.0]), 0.0, places=12)
+        self.assertGreater(weighted_instability(churn, [1.0, 1.0]), 0.4)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 
