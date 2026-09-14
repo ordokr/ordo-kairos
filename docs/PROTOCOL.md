@@ -1642,6 +1642,12 @@ Sweep once, to the depth the API reaches. Below **20 incentivized markets**, WIT
 
 > **REGISTERED 2026-09-14, before `gatef.py` was written and before any carry P&L was computed.**
 > Runs: `python gatef.py --nulls` (the null gate), then `python gatef.py` (the measurement).
+>
+> **STATUS: RUN 2026-09-14 — REFUTED.** At no leverage does net return on deployed capital clear the
+> 6% this repository already charges for locked collateral: best **+2.85%/yr** (BTC at 3x), and every
+> higher leverage was liquidated on the real price path. Full result in
+> [`GATEF-RESULTS.md`](GATEF-RESULTS.md); null-gate defect recorded as
+> [`CORRECTIONS.md`](CORRECTIONS.md) Pass 32.1.
 
 ### Why this is a new class
 
