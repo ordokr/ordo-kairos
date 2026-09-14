@@ -8,6 +8,55 @@ Newest pass at the top.
 
 ---
 
+## Pass 32 — Gate F run; carry does not clear the cost of the capital it locks (2026-09-14)
+
+Class F registered and run. Result in [`GATEF-RESULTS.md`](GATEF-RESULTS.md). **REFUTED: best net
+return on deployed capital `+2.85%`/yr against a `6%` hurdle, and every leverage that would raise it
+was liquidated on the real price path.**
+
+### 32.1 The estimator manufactured a profit out of a liquidation, and the null gate caught it
+
+Gate F's null gate **failed on its first run**: `liquidation_cascade` reported a profit in **35%** of
+replications of a world that liquidated in **100%** of them.
+
+The cause was a discretization defect. A period can jump far past the liquidation trigger, and the
+estimator credited the spot leg at that **overshot** price while losing only the fixed margin — so a
+violent breach paid *better* than a marginal one. Exchanges liquidate continuously and nobody keeps
+the overshoot.
+
+Fixed in the estimator, not the worlds (A8): the spot is credited **at the threshold**, making the
+residue exactly maintenance + penalty + one crossing, with the larger loss being the carry never
+earned afterwards. A regression test now asserts a bigger breach cannot pay more than a smaller one.
+
+### 32.2 The exhibit is the whole argument for the class of gate
+
+On the liquidation world the **naive carry sum** — funding totalled, four crossings charged, price
+path ignored — reports **`+4.71%`** where the truth is **`-0.67%`**. A 5.4-point error that flips the
+sign, produced by an estimator that never looks at the price.
+
+**That is what every public carry backtest over a calm window is.** The carry is paid *for* the
+crash; a sample without one measures the premium and none of the risk.
+
+### 32.3 The trade-off is now measured rather than argued
+
+Leverage is the only lever that raises return on locked capital, and it is the same lever that lowers
+the breach threshold. BTC pays most at 3x (`+2.85%`) and is **liquidated at 5x** (`-2.72%`); SOL is
+liquidated at **2x**. Even a 98-day window that looks calm in aggregate breached those thresholds.
+
+### 32.4 A venue is legally unreachable, and that is a measurement
+
+`fapi.binance.com` returns **HTTP 451 — Unavailable For Legal Reasons** from the operator's
+jurisdiction. The deepest-liquidity venue for this trade cannot be reached at all. Recorded as an
+operator precondition of the kind Gate C refused to assume; nothing here asserts eligibility to
+trade any venue.
+
+OKX caps funding history at **98 days**, verified against a retrying fetcher so the limit is a
+genuine end rather than a swallowed rate limit (Pass 9). The sample therefore cannot be guaranteed
+to contain an unwind — **which is why the refutation rests on the null gate rather than on the
+window.**
+
+---
+
 ## Pass 31 — Gate R run; a verdict whose sign depends on an accounting choice (2026-09-14)
 
 Class R registered and run. Result in [`GATER-RESULTS.md`](GATER-RESULTS.md). **NOT REFUTED on the

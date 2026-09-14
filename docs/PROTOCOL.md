@@ -1638,6 +1638,118 @@ Sweep once, to the depth the API reaches. Below **20 incentivized markets**, WIT
 
 ---
 
+## Class F — Funding-rate carry, and Gate F
+
+> **REGISTERED 2026-09-14, before `gatef.py` was written and before any carry P&L was computed.**
+> Runs: `python gatef.py --nulls` (the null gate), then `python gatef.py` (the measurement).
+
+### Why this is a new class
+
+Classes A, B, C, M and R all traded **prediction markets**. Class F is a different venue, a
+different instrument, and a different economic mechanism, so it inherits none of their licences.
+
+A delta-neutral carry holds spot long against a perpetual short and collects the funding longs pay
+shorts. **It is not arbitrage.** Schmeling et al. trace crypto carry to "(i) demand from smaller,
+trend-chasing investors seeking leveraged upside exposure and (ii) the limited deployment of
+arbitrage capital because of regulatory and margin frictions", and state that taking the other side
+"is risky due to **spikes in margins and liquidations amid drawdowns**". **The carry is paid
+compensation for bearing crash risk**, and it is the negatively-skewed structure Brunnermeier et al.
+documented in FX: smooth accumulation, violent unwind.
+
+### The hypothesis, stated so it can fail
+
+> **H:** On reachable venues, realized funding carry net of four crossings and of liquidation losses
+> exceeds the opportunity cost of the capital the position locks, on a sample that contains an
+> adverse move.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **return on deployed capital**, plus absolute dollars at a stated capital base. Capital is `spot notional + perp margin`, never notional alone — quoting carry against notional is the single largest inflation vector in the public numbers |
+| **A rate is legitimate here, unlike Gate 4.0** | Pass 27.1 refuted comparing a *rate* to a *magnitude*. Here both sides are rates on the **same denominator** (deployed capital), so the comparison is dimensionally sound. The absolute figure is reported beside it anyway |
+| **Weighting** | per instrument, reported separately. BTC, ETH and SOL had 15.5%, 24.7% and 34.8% negative-funding periods in the same window — they are not one trade |
+| **Preconditions** | venue reachable from the operator's jurisdiction; funding history available; instrument in the liquid set |
+| **Design variable (C11)** | **leverage on the perp leg**, curve over 1 / 2 / 3 / 5 / 10. Leverage raises return on capital and lowers the liquidation threshold simultaneously; holding it at one value would hide the entire trade-off |
+| Costs | four crossings (buy spot, short perp, cover perp, sell spot) at the venue's taker fee, plus funding paid when the rate is negative |
+| Hurdle | `CostModel.settlement_wedge_annual` = **6%/yr** on deployed capital — this repo's own constant, unchanged since Gate 4.0 |
+
+### Measured apparatus limits, recorded before the run
+
+- **`fapi.binance.com` returns HTTP 451 — Unavailable For Legal Reasons** from the operator's
+  jurisdiction. The deepest-liquidity venue is legally unreachable. This is an **operator
+  precondition** of the kind Gate C refused to assume, and nothing here asserts eligibility to trade
+  any venue.
+- **OKX caps funding history at ~98 days** (296 records; page 3 returns genuinely empty, verified
+  against a retrying fetcher so the limit is not a swallowed error — Pass 9). dYdX publishes hourly
+  funding but only ~41 days.
+- **Therefore the real sample cannot be guaranteed to contain a drawdown**, and the measurement
+  alone cannot answer the question. **The null gate carries the crash discipline.**
+
+### Gate F — the null gate, and it is the whole gate
+
+**The false-positive generator is a sample without an unwind.** Any carry backtest over a calm window
+shows smooth accumulation, because that is what the strategy does right up until it doesn't. An
+estimator that has not been shown to report a loss in a world that liquidates is measuring the
+premium and ignoring the risk it is paid for.
+
+**Null worlds — carry does NOT pay once risk is counted, and the estimator must report a loss:**
+
+1. **Liquidation cascade.** Steady positive funding, then an upward move that breaches the perp
+   leg's margin. The discriminating null: the funding column looks perfect throughout.
+2. **Bear regime.** Funding flips negative and stays; the carry is paid *by* you.
+3. **Margin spike.** A move large enough to force deleveraging at the worst price, short of full
+   liquidation.
+4. **Costs exceed carry.** Genuine positive funding too small to clear four crossings.
+
+**Power worlds — carry genuinely pays, and the estimator must find it:**
+
+5. Steady positive funding, modest volatility, no breach.
+6. A high-funding regime with survivable volatility.
+
+**Exhibit:** the **naive carry sum** — funding totalled with no liquidation model — retained because
+the size of its failure in world 1 is the argument for the whole gate.
+
+**Pass — both conditions:** no null world reports a profit above chance on the exact binomial tail,
+**and** the power worlds are detected at least `POWER_FLOOR` of the time. An estimator that reports
+losses everywhere passes the first trivially.
+
+### Pre-committed expectation
+
+Measured on OKX over the 98 days to 2026-09-14: **BTC +4.55%, ETH +3.26%, SOL +2.26% annualized
+gross**, before any cost. **BTC's gross carry is already below the 6% hurdle**, so the expectation is
+refutation at every leverage that survives liquidation, and survival only at leverages whose
+liquidation threshold a crypto drawdown clears routinely. Recorded before the number exists.
+
+The published figures are not disputed — they are **regime numbers**. Carry has exceeded 40% p.a. in
+boom periods. That the reachable window shows 4.55% is itself the finding: **this is a regime
+exposure, not a harvest.**
+
+### Stopping and decision rules — written before the numbers
+
+Fetch each venue's history once, to the depth its API reaches, and stop. Below **3 instruments with
+usable history**, WITHHELD as apparatus.
+
+| outcome | action |
+|---|---|
+| Null gate fails | No measurement runs. Fix the estimator; do not tune the worlds (A8) |
+| Net return on capital ≤ 6% at every leverage | **REFUTED. Class F closes** |
+| Net clears 6% at some leverage **and** that leverage survives the null worlds | Class F survives; the next question is venue eligibility and counterparty risk, which is a **new registration** |
+| Fewer than 3 instruments | WITHHELD |
+
+### What this does not cover
+
+- **Counterparty and exchange default.** Pindza measures these as *more damaging than price
+  crashes*; FTX is the realized case. Unmodelled and cuts against.
+- **Crowding.** Arbitrage capital growth measurably lowers carry returns; the measurement is a
+  snapshot of today's competition.
+- **Basis risk between venues** if the legs sit on different exchanges.
+- **Venue eligibility is an operator precondition** this repo neither assumes nor asserts. Binance is
+  451 from here.
+- **F3 stands.** No broker integration, no live capital, no production executor.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**
