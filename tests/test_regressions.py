@@ -1003,6 +1003,53 @@ class TestPass26RegisteredExclusionsMustBeEnforcedOrReported(unittest.TestCase):
                              f"whether the recorded null was re-measured")
 
 
+class TestPass27ARateHurdleCannotMeasureAScaleConstraint(unittest.TestCase):
+    """Pass 27. Gate 4.0's registered floor was cleared and the clearing meant nothing.
+
+    The floor was "beat 6%/yr on capital locked" — an *existing* constant, chosen so it could not be
+    a threshold invented to be clearable. Guarding a constant against being chosen is not the same as
+    checking it is the right **dimension**. Throughput is dollars; the floor tested a rate.
+    """
+
+    def test_the_measured_strategy_clears_a_rate_floor_while_earning_ten_dollars(self):
+        """The defect, in the numbers that produced it."""
+        from kairos.economics import StrategyEconomics
+
+        measured = StrategyEconomics(
+            name="Class C convergence @ 25",
+            edge_per_contract=0.00803,      # the one in-band opportunity, 2026-09-14
+            fillable_contracts=25.0,
+            opportunities_per_year=52.0,    # horizon-limited maximum at a 7-day hold
+            capital_required=24.40,         # deployable capital across the whole universe
+        )
+        self.assertTrue(measured.worth_building(0.06 * 24.40),
+                        "it does clear the registered rate floor")
+        self.assertLess(measured.net_annual_value, 11.0,
+                        "and a rate hurdle cannot see that this is ten dollars a year")
+
+    def test_a_capacity_runner_reports_an_absolute_magnitude_not_only_a_rate(self):
+        """A verdict about whether something is a business must be stated in dollars."""
+        src = (ROOT / "gate4.py").read_text(encoding="utf-8").lower()
+        self.assertIn("deployable capital", src,
+                      "gate4.py must report the absolute capital the universe can absorb")
+        self.assertIn("necessary, never sufficient", src,
+                      "clearing the rate floor must be labelled insufficient wherever it is printed")
+
+    def test_no_recurrence_rescues_a_non_positive_edge(self):
+        """Infinity is an impossibility, not a large number, and must not render as one."""
+        from kairos.economics import StrategyEconomics
+
+        recorded_class_b = StrategyEconomics(
+            name="Class B negRisk @ 25 (recorded)",
+            edge_per_contract=-0.00597,     # SCANB-RESULTS.md, the *best* of 78 priced groups
+            fillable_contracts=25.0,
+            opportunities_per_year=4067.0,
+            capital_required=25.0,
+        )
+        self.assertEqual(recorded_class_b.required_opportunities_for(1.50), float("inf"))
+        self.assertLess(recorded_class_b.net_annual_value, 0.0)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

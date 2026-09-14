@@ -108,6 +108,67 @@ class TestCapacityBeatsEdge(unittest.TestCase):
             StrategyEconomics("bad", 0.01, 1.0, 100.0, 1_000.0, hit_rate=1.5)
 
 
+class TestRequiredRecurrenceInvertsTheUnmeasuredTerm(unittest.TestCase):
+    """Gate 4.0. Three of the four inputs are measurable; recurrence is not.
+
+    No price history has been fetched, so how often an opportunity reappears is unobserved, and
+    PROTOCOL forbids annualising a short sample as though frequency were stationary. So the
+    unmeasured term is **inverted**: report the recurrence the hurdle would require and let the
+    reader judge it against the venue, rather than inventing a frequency and reporting dollars.
+    """
+
+    def _econ(self, **kw):
+        base = dict(name="x", edge_per_contract=0.05, fillable_contracts=25.0,
+                    opportunities_per_year=0.0, capital_required=25.0)
+        base.update(kw)
+        return StrategyEconomics(**base)
+
+    def test_it_returns_the_rate_the_hurdle_arithmetically_requires(self):
+        # 1000 / (0.05 * 25) = 800
+        self.assertAlmostEqual(self._econ().required_opportunities_for(1000.0), 800.0, places=9)
+
+    def test_at_the_returned_rate_the_strategy_exactly_meets_the_hurdle(self):
+        """The property that matters: the answer round-trips through net_annual_value."""
+        for hurdle in (0.0, 250.0, 1000.0, 1e6):
+            for kw in ({}, {"annual_fixed_cost": 5000.0}, {"hit_rate": 0.4},
+                       {"edge_per_contract": 0.002, "fillable_contracts": 3.0}):
+                with self.subTest(hurdle=hurdle, **kw):
+                    n = self._econ(**kw).required_opportunities_for(hurdle)
+                    at_n = self._econ(opportunities_per_year=n, **kw)
+                    self.assertAlmostEqual(at_n.net_annual_value, hurdle, places=6)
+
+    def test_fixed_costs_raise_the_required_rate(self):
+        bare = self._econ().required_opportunities_for(1000.0)
+        loaded = self._econ(annual_fixed_cost=5000.0).required_opportunities_for(1000.0)
+        self.assertGreater(loaded, bare)
+
+    def test_an_optimistic_hit_rate_understates_it(self):
+        perfect = self._econ(hit_rate=1.0).required_opportunities_for(1000.0)
+        realistic = self._econ(hit_rate=0.5).required_opportunities_for(1000.0)
+        self.assertAlmostEqual(realistic, 2.0 * perfect, places=9)
+
+    def test_a_non_positive_edge_can_never_clear_any_positive_hurdle(self):
+        """The case that actually obtains here. Every Class B group priced negative."""
+        for edge in (0.0, -0.006):
+            with self.subTest(edge=edge):
+                n = self._econ(edge_per_contract=edge).required_opportunities_for(1000.0)
+                self.assertEqual(n, float("inf"),
+                                 "no amount of recurrence rescues a negative edge")
+
+    def test_nothing_fillable_can_never_clear_either(self):
+        self.assertEqual(self._econ(fillable_contracts=0.0).required_opportunities_for(1000.0),
+                         float("inf"))
+
+    def test_a_hurdle_already_cleared_requires_no_recurrence(self):
+        self.assertEqual(self._econ(annual_fixed_cost=0.0).required_opportunities_for(0.0), 0.0)
+
+    def test_it_ignores_the_frequency_the_instance_was_built_with(self):
+        """Asking what the rate *would* have to be must not depend on the guess already in it."""
+        a = self._econ(opportunities_per_year=0.0).required_opportunities_for(1000.0)
+        b = self._econ(opportunities_per_year=99999.0).required_opportunities_for(1000.0)
+        self.assertAlmostEqual(a, b, places=9)
+
+
 class TestEffectiveSampleSize(unittest.TestCase):
     def test_twenty_contracts_on_one_election_are_one_observation(self):
         self.assertAlmostEqual(effective_sample_size([20]), 1.0, places=9)

@@ -119,6 +119,31 @@ class StrategyEconomics:
             return float("inf")
         return self.net_annual_value / self.capital_required
 
+    def required_opportunities_for(self, hurdle_annual: float) -> float:
+        """How often this opportunity must recur per year to clear ``hurdle_annual``.
+
+        The inverse of :attr:`net_annual_value` in ``opportunities_per_year``, and the instance's
+        own frequency is deliberately **ignored** — the question is what the rate would have to be,
+        not what it was guessed at.
+
+        Reported because recurrence is the one input Gate 4.0 cannot measure: no price history has
+        been fetched, and annualising a short sample as though opportunity frequency were stationary
+        is exactly what ``docs/PROTOCOL.md`` Gate 4 forbids. Inverting an unmeasured term turns it
+        into a dependency the reader can judge; inventing it would hide the assumption inside a
+        dollar figure (AXIOMS A6, G3).
+
+        Returns ``inf`` when no recurrence can ever clear the hurdle — a non-positive edge, or
+        nothing fillable. That is not a large number, it is an impossibility, and callers must not
+        render it as one.
+        """
+        per_opportunity = self.edge_per_contract * self.fillable_contracts * self.hit_rate
+        shortfall = hurdle_annual + self.annual_fixed_cost
+        if shortfall <= 0.0:
+            return 0.0
+        if per_opportunity <= 0.0:
+            return float("inf")
+        return shortfall / per_opportunity
+
     def worth_building(self, hurdle_annual: float) -> bool:
         """Whether net annual value clears an explicit hurdle.
 

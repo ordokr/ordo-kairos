@@ -1039,6 +1039,109 @@ Replay against real book, fee, fill and settlement semantics.
 
 > **STATUS: NOT RUN — blocked on Gate 3.** Capacity is a question about a strategy that survives
 > execution realism. Running it now would size something that does not exist (E1).
+>
+> **Gate 4.0 is not blocked on it — see below.** The ordering above is correct for *"is there an
+> edge"* and wrong for *"is there a business"*, and that distinction is itself a constraint.
+
+### Gate 4.0 — the capacity ceiling, measured before another edge is searched for
+
+> **REGISTERED 2026-09-14, before it was built and before any capacity number was produced.**
+> Frozen while the only economic figures on disk were Class B's and Class C's per-contract edges.
+> Runs: `python gate4.py`.
+>
+> **STATUS: RUN 2026-09-14 — FLOOR CLEARED, AND THE FLOOR CANNOT BEAR THE WEIGHT.** 82 pairs priced;
+> **78 do not clear their own round trip**, 3 clear but are longshots, **1 clears in band**.
+> Deployable capital across the whole reachable universe: **$24.40**. Generous annual ceiling:
+> **$10.47**. That is a 43% return on capital, so it passes the registered 6% floor — **because the
+> floor is scale-free and the constraint is a magnitude.** The hurdle is *not* being changed after
+> the fact; the defect is recorded (`CORRECTIONS.md` Pass 27.1) and the finding is stated in the
+> units the question was asked in. The registration already said clearing this floor is **necessary,
+> never sufficient**, and left the operator hurdle unset: any hurdle above ten dollars a year fails.
+> **Capacity is the binding constraint, established by magnitude rather than by the test.**
+> See [`GATE4-RESULTS.md`](GATE4-RESULTS.md).
+
+**Why this runs now, out of order.** Gate 4 sits behind Gate 3, which is behind having a candidate.
+So the one measurement that can kill the programme for free is scheduled after every expensive
+thing in it. That is a **policy constraint**, not an evidential one: nothing about capacity requires
+a surviving candidate, because capacity is a property of the *venue* — depth, horizon and the size
+of the opportunity set — not of the strategy that would exploit it. Gate D.0 established the
+pattern: a cheap falsifier placed ahead of an expensive build, whose adverse prior is recorded
+before the number exists.
+
+**What it measures.** For the reachable opportunity set, at measured depth:
+
+```
+annual value = edge_per_contract x fillable_contracts x opportunities_per_year x hit_rate
+             - annual_fixed_cost
+```
+
+`kairos.economics.StrategyEconomics` already carries this and has never been given measured inputs.
+Three of the four are measurable now. **`opportunities_per_year` is not** — no price history has
+been fetched, so recurrence is unobserved, and PROTOCOL Gate 4 forbids annualising a short sample
+as though frequency were stationary.
+
+**So the unmeasured term is inverted rather than invented.** The gate reports the **recurrence rate
+required to clear the hurdle** — how many times a year the whole measured opportunity set must
+reappear for this to be a business — and the reader judges that number against the venue. This is
+the same move `scanc.py` makes with the unverified Kalshi fee: an unmeasured input becomes a
+reported dependency, never a silent assumption (AXIOMS A6, G3).
+
+#### The hurdle, fixed before the number
+
+| decision | value | why this |
+|---|---|---|
+| **Objective floor** | the repo's own `CostModel.settlement_wedge_annual` = **6%/yr** on capital locked | Deliberately an existing constant, not a new one. The cost model already charges this as the opportunity cost of locked collateral, so a strategy that cannot beat it is **strictly worse than not trading** — it pays itself less than the carry it is charged. A floor invented today, after four failed hypotheses, would be a floor chosen to be clearable |
+| **Operator hurdle** | **not set here** | PROTOCOL Gate 4: *"the hurdle is what the same effort earns elsewhere, not zero."* That is the operator's opportunity cost and this repo does not know it. Passing the objective floor is **necessary, not sufficient** |
+| Sizing | 25 contracts a side, curve over 5/10/25/50 | C11, unchanged |
+| Capital per opportunity | the measured all-in entry cost at that size | Not notional. What is actually posted and locked |
+| Horizon | measured per opportunity: settlement for Class B, the registered 7 days for Class C | Bounds how often the *same* capital can be redeployed |
+| `hit_rate` | **1.0**, and labelled optimistic | Latency, races and partial fills are unmeasured. Setting it below 1 would be inventing a number in the direction of the expected answer |
+| `annual_fixed_cost` | **0.0**, and labelled optimistic | Research, data and operator time are real costs that belong here. Charged at zero so the ceiling cannot be blamed on an overhead estimate |
+
+**Every optimistic assumption above is deliberate.** The ceiling is built to be unreachably
+generous — perfect fills, free infrastructure, free research, instant redeployment — so that a
+failure cannot be attributed to a harsh test, exactly as Gate D.0 compares the largest gap to the
+median cost.
+
+#### Pre-committed expectation, recorded before the run
+
+The visible Class C opportunity set at the time of registration is two pairs worth roughly
+`$1.54` combined at 25 contracts, against a 140-pair table, and Class B's completable groups were
+uniformly negative. **The expectation is therefore that the ceiling lands orders of magnitude below
+any defensible hurdle, and that the binding constraint on this programme is capacity rather than
+edge discovery.** This is written down now so a confirming result cannot be presented as a
+discovery, and so a contradicting one is visible as the surprise it would be.
+
+It is also a sketch, and `CORRECTIONS.md` Pass 26.3 records what happened the last time a sketch
+inside a registration was treated as a measurement: the Class C cost estimate was wrong by a factor
+of four, in its own favour. **This expectation carries no weight against the number.**
+
+#### Stopping rule — binding
+
+Measure the reachable opportunity set **once**, to the depth the APIs already reach, and stop. Do
+not widen the universe because the ceiling disappoints. If nothing prices, the verdict is WITHHELD
+as an apparatus failure, never as a capacity finding (AXIOMS A1, G12).
+
+#### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Ceiling clears the 6%/yr floor on deployed capital at a plausible recurrence | Capacity is **not** the constraint. Gate D and Gate 3 become worth their cost, and the operator hurdle is then the live question |
+| Ceiling is below the floor, or requires an implausible recurrence | **Capacity is the binding constraint, and it is external.** No further edge search is licensed: more discovery optimises a non-constraint. The remaining moves are structural — a different role (maker rather than taker), a different market, or a different product — and each is a new registration, not a continuation of this one |
+| Nothing prices | WITHHELD. Apparatus, not capacity |
+
+#### What Gate 4.0 does not cover, named now
+
+- **Recurrence is not measured.** It is inverted and reported. A required rate that looks plausible
+  is not evidence that the rate obtains.
+- **It is a Level-0 screen** (D3). It may kill a candidate; it may not certify one. A survivor is
+  re-expressed as `net_profit(size)`, built only when a candidate requires it (E1).
+- **Impact is unmodelled.** Profit declines nonlinearly with deployed size; the ceiling assumes it
+  does not.
+- **It says nothing about whether an edge exists.** A capacity ceiling is not a statistical result
+  and may not be reported as one.
+- **Venue eligibility remains an operator precondition** this repo neither assumes nor asserts.
+- **F3 stands.** No broker integration, no live capital, no production executor.
 
 
 `edge × fillable × frequency − costs` is a **Level-0 screening upper bound** (D3). It may kill a

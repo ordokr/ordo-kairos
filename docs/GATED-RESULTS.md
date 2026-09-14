@@ -120,7 +120,11 @@ fees would not close either.
   unverified; see above.
 - **`days_held` is the registered 7 days**, not a measured holding period. No history has been
   fetched, so no realised convergence time exists to use.
-- **NOT REFUTED is not an edge.** Two pairs of 81 have a gap exceeding their own round trip. This
+- **NOT REFUTED is not an edge.** ~~Two pairs of 81 have a gap exceeding their own round trip.~~
+  **CORRECTED 2026-09-14 — that count was inferred from the top-10 table above, never measured.**
+  Counted directly by `gate4.py` on a later snapshot: **4 clear their own round trip, of which 3 are
+  longshots outside the registered band, leaving 1.** The inference was wrong in both directions.
+  See `CORRECTIONS.md` Pass 27.2 and [`GATE4-RESULTS.md`](GATE4-RESULTS.md). This
   gate compares the largest gap to the *median* cost by registration, a comparison deliberately
   stacked in the hypothesis's favour so that a refutation cannot be blamed on a harsh test. It is
   not evidence that a convergence trade is profitable, and it may not be reported as such.

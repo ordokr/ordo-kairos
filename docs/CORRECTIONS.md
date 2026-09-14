@@ -8,6 +8,64 @@ Newest pass at the top.
 
 ---
 
+## Pass 27 — Gate 4.0 run; a rate hurdle cannot measure a scale constraint (2026-09-14)
+
+Gate 4.0 was registered out of gate order on a Theory-of-Constraints reading: Gate 4 sits behind
+Gate 3, behind having a candidate, so the one measurement that could kill the programme for free was
+scheduled after every expensive thing in it. That ordering is a **policy constraint**, and capacity
+is a property of the venue rather than of any strategy, so it needed no candidate. Result in
+[`GATE4-RESULTS.md`](GATE4-RESULTS.md).
+
+### 27.1 The registered objective floor was the wrong *kind* of quantity
+
+The floor was *"beat `settlement_wedge_annual` (6%/yr) on capital locked"*, chosen deliberately as an
+**existing** constant so it could not be a threshold invented to be clearable. It was cleared:
+`$10.47/yr` against a `$1.46` hurdle, a 43% return on capital.
+
+**And 43% on twenty-four dollars is ten dollars.** Deployable capital across the entire reachable
+cross-venue universe is `$24.40`. A rate hurdle passes trivially when the denominator is small, so
+the test as registered cannot separate *"this is a business"* from *"this is ten dollars a year"* —
+which is the only question Gate 4.0 existed to answer. **Throughput is dollars, not percentages**,
+and the registration used a rate to test a magnitude.
+
+**The hurdle is not being changed after seeing the result**, which is the A8 move and would be
+especially tempting because changing it produces the answer the registration predicted. What is done
+instead: the registered verdict is reported as it came out, this defect is recorded, and the finding
+is restated in the units the question was asked in — `$24.40` deployable, `$10.47/yr` ceiling under
+assumptions that cannot be met. That sentence needs no hurdle to interpret, and the registration had
+already said clearing the floor was necessary and never sufficient.
+
+**Guarding an existing constant against being *chosen* is not the same as checking it is the right
+dimension.** Pass 26.3 recorded a sketch mistaken for a measurement; this is its sibling — a
+well-sourced number applied to the wrong question.
+
+### 27.2 A count that was inferred and published as measured
+
+`GATED-RESULTS.md` and commit `6b4348b` both stated *"two pairs of 81 have a gap exceeding their own
+round trip."* That was read off the printed **top-10** table, not counted across all 81. Counted
+directly by `gate4.py`: **4 clear, of which 3 are longshots outside the registered band, leaving 1.**
+
+Wrong in both directions — undercounting the clearing set and overcounting the tradeable one. This
+is the G5 failure the repo already guards against in the other direction (an error and a measurement
+sharing a counter); here an **inference and a measurement shared a sentence**. Corrected at the
+source in `GATED-RESULTS.md`; the commit message stands as the historical record and is corrected
+here rather than rewritten.
+
+### 27.3 What the capacity finding does and does not license
+
+It establishes that **capacity is the binding constraint and it is external** — one in-band
+opportunity, `$24.40` deep, across everything two venues jointly reach. Not by the floor test, which
+passed, but by magnitude.
+
+It does **not** say no edge exists, and it is not a statistical result (A1). It says that if one
+exists there is nowhere here to put meaningful money. Elevating a capacity constraint is structural
+— a different role (maker rather than taker, the one untested lever inside these venues, where
+`maker_fee_coeff` is already `0.0` and the spread becomes income rather than cost), a different
+market, or a different product. **Each is a new registration, not a continuation of this one**, and
+none is licensed by this pass.
+
+---
+
 ## Pass 26 — Gate D.0 run; a registered exclusion that no scanner enforces (2026-09-14)
 
 Gate D.0 ran as registered on the 140-pair alignment table. Result and full limitations in
