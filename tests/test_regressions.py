@@ -1163,6 +1163,36 @@ class TestPass30QueuePositionCannotBeatPriority(unittest.TestCase):
         self.assertLess(gate3.RETENTION, 0.05, "3.9% of the quoted half-spread, per scanm.py")
 
 
+class TestPass31AnOptimumWhereTheMeasuredThingPaysNothing(unittest.TestCase):
+    """Pass 31. Gate R's first run put its optimum at the one distance where rewards are zero.
+
+    The implementation had added an unregistered capture term and reported $3,257,641/yr at
+    ``s/v = 1.0``. An optimum sitting exactly where the thing being measured pays nothing is a
+    structural tell that the number came from somewhere else — here, from applying Gate M's constant
+    at 4-6x the distance it was measured at, a caveat the code carried in a comment and then let
+    stand as the verdict.
+    """
+
+    def test_the_reward_term_is_zero_at_the_edge_so_an_optimum_there_is_not_reward_driven(self):
+        from kairos.rewards import order_score
+
+        self.assertEqual(order_score(0.045, 0.045, 2000.0), 0.0)
+        self.assertGreater(order_score(0.045, 0.0, 2000.0), 0.0)
+
+    def test_the_runner_reports_both_accountings_rather_than_picking_one(self):
+        """Pass 31.2: the frozen rule double-counts, so neither reading may stand alone."""
+        src = (ROOT / "gater.py").read_text(encoding="utf-8").lower()
+        self.assertIn("registered", src)
+        self.assertIn("consistent", src)
+        self.assertIn("retention", src, "the Gate-M-consistent per-fill P&L must be present")
+
+    def test_a_pool_nobody_can_qualify_for_is_counted_separately(self):
+        """AXIOMS G5: a zero-max-spread pool is a real finding, not a market with no pool."""
+        src = (ROOT / "gater.py").read_text(encoding="utf-8")
+        self.assertIn("pool_with_zero_max_spread", src)
+        self.assertIn("no_reward_pool", src)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

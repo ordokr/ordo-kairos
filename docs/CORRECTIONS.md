@@ -8,6 +8,65 @@ Newest pass at the top.
 
 ---
 
+## Pass 31 — Gate R run; a verdict whose sign depends on an accounting choice (2026-09-14)
+
+Class R registered and run. Result in [`GATER-RESULTS.md`](GATER-RESULTS.md). **NOT REFUTED on the
+registered rule by $6,324/yr at one size, negative at every larger size, and positive everywhere
+under the other honest accounting.**
+
+### 31.1 The implementation diverged from the registration, and the absurdity caught it
+
+The frozen rule is `pool x share(s) - fills(s) x 0.0096`. The first implementation added
+`+ fills x distance`, an unregistered capture term, and reported **$3,257,641/yr at `s/v = 1.0`** —
+the one distance at which rewards are **zero by construction**.
+
+**An optimum sitting exactly where the measured thing pays nothing is a structural tell**, and it is
+what exposed the defect. The number came from applying Gate M's constant at 4-6x the distance it was
+measured at, a caveat the code itself carried in a comment and then let stand as the verdict. Naming
+a limitation and then reporting the number it invalidates is the failure, not the caveat.
+
+### 31.2 The registration double-counts adverse selection
+
+Gate M's `R(60)` is **already net** of adverse selection — it is what a maker keeps. The registered
+rule charges `0.0096` per fill against a capture of **zero**, which charges the same cost twice. The
+per-fill P&L consistent with Gate M and with `gate3.py` is `RETENTION x s`: small, and **positive**.
+
+The two accountings **disagree in sign at every size above 20**: at 100 contracts and `s = 0.1`,
+`-$30,415/yr` registered against `+$39,820/yr` consistent.
+
+The registered rule was run as the verdict because it is what was frozen (A8), and the consistent
+reading is reported beside it. **A verdict whose sign depends on an accounting choice is not a
+finding, and recording that is the result.**
+
+### 31.3 Reading the primary source inverted the candidate that generated this gate
+
+The `principles-20-solutions` run that produced Class R selected *"quote at the max-spread edge to
+earn rewards while minimising fills."* The venue's published score is `((v-s)/v)^2` — **zero at the
+edge**. Rewards pay quadratically more for the tighter quote, which is also the position of maximum
+adverse selection.
+
+The candidate had been generated against a **search-result summary**; one fetch of the venue's own
+documentation destroyed its premise. This is the skill's own "second-hand framings" rule earning its
+place, and it is the third time in this arc that re-reading a primary source changed a conclusion
+(the others: Pass 26.1's unenforced exclusion, and the re-probe that recovered
+`rewards_daily_rate` after a first probe had eliminated the whole class).
+
+### 31.4 What the class establishes, and the term it cannot measure
+
+At the honest end — Gate-M-consistent accounting, at a size where the assumption holds — subsidy
+capture across the **entire** incentivized universe is worth **tens of thousands of dollars a year**.
+Two to three orders of magnitude above Class C (`$10.47/yr`) and Class M's Gate 3.0 (`~$1,200/yr`),
+and still not a business that justifies the build.
+
+**The deciding term is unmeasurable from outside:** `own / (own + competitors)` is a snapshot of
+today's competition, and the whole question is what it does when an entrant arrives. A congestion
+game cannot be resolved by observing it from outside the congestion.
+
+Two subsidy programmes remain untouched: **maker rebates** and **holding rewards**
+(`holdingRewardsEnabled`), both of which cut for the hypothesis.
+
+---
+
 ## Pass 30 — Gate 3.0 run; the fills arrive, and the registration's predictions did not (2026-09-14)
 
 Result in [`GATE3-RESULTS.md`](GATE3-RESULTS.md). **Both variants clear the floor at every size

@@ -1528,6 +1528,116 @@ as underpowered — *"not enough evidence"*, never *"no effect"* (A1).
 
 ---
 
+## Class R — Subsidy capture, and Gate R
+
+> **REGISTERED 2026-09-14, before `gater.py` was written and before any reward score was computed.**
+> Runs: `python gater.py`. Method: `principles-20-solutions`, proportionality 4/4, Consensus-backed.
+>
+> **STATUS: RUN 2026-09-14 — NOT REFUTED on the registered rule, and the verdict is not robust.**
+> 120 incentivized markets priced from 1,902 swept; median daily pool **$5**, median competitor
+> score **2,336**. Best net on the frozen rule: **+$6,324/yr at 20 contracts, `s = 0`** — negative at
+> every larger size (−$28k at 100, −$900k at 2,000).
+>
+> **The registration double-counts adverse selection** (`CORRECTIONS.md` Pass 31.2): Gate M's `R(60)`
+> is already net of it, so charging `0.0096` against a capture of zero charges it twice. Under the
+> Gate-M-consistent accounting every distance is positive, `+$8k` to `+$40k`/yr. **The two readings
+> disagree in sign at every size above 20.** The frozen rule was run as the verdict and the
+> consistent reading reported beside it; a verdict whose sign depends on an accounting choice is not
+> a finding, and that is the result.
+>
+> Two to three orders of magnitude above Class C (`$10.47/yr`) and Gate 3.0 (`~$1,200/yr`), and
+> still not a business. **The deciding term — what `own/(own+competitors)` does when an entrant
+> arrives — cannot be measured from outside the congestion.** Maker rebates and holding rewards
+> remain untouched. See [`GATER-RESULTS.md`](GATER-RESULTS.md).
+
+### Why this is a new class
+
+Classes A, B, C and M all tested hypotheses whose counterparty was an **informed trader**, and all
+four were beaten by that counterparty — Class M by a measured 96.1% of the spread. Class R's
+counterparty is **the venue**, which pays by published rule rather than by opinion. That is a
+different principal cause, so Class R inherits none of the prior licences.
+
+Polymarket runs **three** subsidy programmes, of which this repository has examined zero: liquidity
+rewards (paid for resting orders), maker rebates (a share of taker fees, paid on fills), and holding
+rewards (`holdingRewardsEnabled`, paid for holding). Gate M.0 recorded rewards as an unmodelled term
+that "cuts for" and every gate since has excluded them.
+
+### The mechanism, taken from the venue's published rule rather than a summary
+
+```
+S(v, s) = ((v - s) / v)^2 * b        v = max spread, s = distance from midpoint, b = size
+Q_one   = scored bids on m + scored asks on m'
+Q_two   = scored asks on m + scored bids on m'
+Q_min   = max(min(Q_one,Q_two), max(Q_one/c, Q_two/c))    midpoint in [0.10,0.90], c = 3.0
+Q_min   = min(Q_one, Q_two)                               midpoint outside it: two-sided required
+Q_final = Q_epoch / sum(Q_epoch)_n                        proportional share of the daily pool
+```
+
+**Reading the primary source inverted this gate's own premise.** The method run that produced this
+registration selected "quote at the `max_spread` edge to earn rewards while minimising fills." The
+published formula scores `((v-s)/v)^2`, which is **zero at the edge** and maximal at the midpoint:
+rewards pay quadratically more for the tighter quote, which is also the position of maximum adverse
+selection. **That tension is the gate**, and it was invisible in the second-hand summary the
+candidate was generated against.
+
+### The hypothesis, stated so it can fail
+
+> **H:** There exists a quote distance `s` at which the subsidy earned exceeds the adverse selection
+> incurred by resting there, summed over the incentivized market set.
+
+### Decision-rule specification — units, weighting, preconditions
+
+*House rule since Pass 28.2, and Pass 30.2's omission is not repeated: the size is frozen as a curve.*
+
+| element | value |
+|---|---|
+| **Units** | **dollars per year, absolute.** Never a rate (Pass 27.1) |
+| **Weighting** | per-market net, summed; per-market curve reported so no single market carries the verdict |
+| **Preconditions** | longshot band (Pass 26.1); tick room > 1; **a published `rewards_daily_rate`** — a market with no pool cannot pay |
+| **Primary statistic** | `max over s of [ pool x share(s) - fills(s) x 0.0096 ]`, summed |
+| **Adverse selection** | **0.0096/contract, measured by Gate M** — carried as a measured constant, not re-derived |
+| **Posted size** | curve over **20 / 100 / 500 / 2000** contracts (C11 — Pass 30.2) |
+| **Quote distance** | curve over `s` in tenths of `max_spread`, 0.0 to 1.0 |
+| Floor | **$104.70/yr**, unchanged from Gates M.0 and 3.0 so all three compare |
+
+### Competitor share is measured, not assumed
+
+`share(s)` is computed by scoring the **real book** with the venue's own formula — every resting
+level within `max_spread` of the midpoint, scored and summed — then `own / (own + competitors)`.
+This is the one term that could have been fudged, so it is taken from the same book fetch the other
+gates use and never parameterised.
+
+### Pre-committed expectation
+
+Subsidy pools are designed to compensate makers "commensurate with the risk they bear" (Feng et al.
+2019), and the prediction-market AMM literature is about **bounding the subsidizer's loss**
+(Moallemi et al. 2026; Chen et al. 2007). A pool sized to offset adverse selection does not exceed
+it except by accident or by competitor absence. **The expectation is a marginal positive at small
+size that vanishes as share normalises against entrants** — a congestion game, not an edge.
+Recorded before the number exists.
+
+### Stopping and decision rules — written before the numbers
+
+Sweep once, to the depth the API reaches. Below **20 incentivized markets**, WITHHELD as apparatus.
+
+| outcome | action |
+|---|---|
+| Best net at any `s` is **≤ 0** | **REFUTED. Class R closes and the registered programme ends** — every hypothesis class tested, none survives |
+| Net clears the floor | Class R survives. The next question is competitor response to entry, which is a **new registration**, not licensed here |
+| Fewer than 20 incentivized markets | WITHHELD |
+
+### What this does not cover
+
+- **Competitor response.** Your share falls when others enter; the measurement is a snapshot of
+  today's competition, not an equilibrium.
+- **Maker rebates and holding rewards** are reported where published but not modelled.
+- **Quote-and-cancel farming is out of scope** — it is what the liquidity-mining literature calls a
+  manipulative practice, and venues detect it. This gate measures honest resting only.
+- **Epoch mechanics, the $1 minimum payout, and cancellation** are unmodelled.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**
