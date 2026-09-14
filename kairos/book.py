@@ -34,7 +34,7 @@ from typing import Sequence
 from .polymarket import _get_retry, cache_dir
 
 __all__ = ["Level", "Book", "Fill", "parse_book", "fetch_book", "fetch_book_result",
-           "cost_to_buy", "proceeds_from_sell"]
+           "cost_to_buy", "proceeds_from_sell", "queue_fills"]
 
 CLOB_BOOK = "https://clob.polymarket.com/book"
 
@@ -190,6 +190,23 @@ def proceeds_from_sell(book: Book, size: float) -> Fill:
     position that cannot be closed at size is a measurement the caller has to be able to refuse on.
     """
     return _walk(book.bids, size)
+
+
+def queue_fills(side_flow: float, queue_ahead: float) -> float:
+    """Contracts an order joining the **back** of the touch queue expects to fill.
+
+    ``docs/PROTOCOL.md`` Gate 3.0. Gate M measured what a fill is worth; this is whether one
+    happens. Price priority puts the resting size ahead of a new order, so nothing reaches it until
+    ``queue_ahead`` is consumed — and **where a day's one-sided flow is smaller than the size already
+    resting, the entrant is never filled and the strategy earns exactly zero**, whatever the spread
+    it was quoting.
+
+    Negative inputs raise rather than clamp: a negative flow or a negative queue is a broken
+    measurement upstream, and silently reading it as zero would turn that into a finding.
+    """
+    if side_flow < 0.0 or queue_ahead < 0.0:
+        raise ValueError(f"flow and queue must be non-negative, got {side_flow!r}, {queue_ahead!r}")
+    return max(0.0, side_flow - queue_ahead)
 
 
 def _walk(levels: Sequence[Level], size: float) -> Fill:

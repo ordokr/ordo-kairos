@@ -8,6 +8,57 @@ Newest pass at the top.
 
 ---
 
+## Pass 30 — Gate 3.0 run; the fills arrive, and the registration's predictions did not (2026-09-14)
+
+Result in [`GATE3-RESULTS.md`](GATE3-RESULTS.md). **Both variants clear the floor at every size
+measured; Class M survives.** The queue turns over ~36 times a day and only 2.4% of markets fail to
+clear it.
+
+### 30.1 The registration specified variant (a) with no cap on posted size
+
+It wrote expected fills for an order joining the back of the queue as
+`max(0, side_flow - touch_depth)` — which lets one entrant absorb **every contract of excess flow at
+unlimited size**. First run: (a) returned `$123,586/yr` against (b)'s `$6,480`.
+
+**That ordering is structurally impossible.** (a) sits strictly behind (b) in the queue and can never
+earn more at equal size. The arithmetic was right and the model was absurd, which is the same shape
+as every defect since Pass 26. Both variants are now capped at the size actually posted, once a day
+— conservative, and stated rather than tuned.
+
+### 30.2 The registration froze no posted size, which C11 exists to prevent
+
+C11 says a design variable is not held at one value. Gate 3.0's frozen-parameters table specifies
+units, weighting, preconditions, statistic and floor — **and no size**, while the entire verdict
+scales linearly in it: `$245` at 5 contracts, `$76,078` at 2,000.
+
+**With no registered size there is no registered verdict, only a curve.** Choosing a point on it now
+would be selecting the answer after seeing it (A8), so the curve is reported whole and the headline
+is given at the size whose retention assumption still holds.
+
+### 30.3 Both pre-committed expectations were wrong, and that is the useful part
+
+The registration predicted that markets wide enough to quote in would be wide *because they are
+quiet*, so (a) would approach zero fills and (b) would be the interesting variant. **Both wrong.**
+The markets are wide and active — 36 queue turnovers a day — and **(a) beats (b) at every size**,
+because paying two ticks for priority is wasted when you get filled anyway.
+
+Recorded prominently because a registration whose predictions are checked and fail is worth more
+than one whose predictions are never checked. Every prior gate's adverse prior was confirmed; this
+one's was refuted.
+
+### 30.4 Where these numbers stop being trustworthy, stated with the result
+
+Every figure rests on `RETENTION = 3.9%`, measured in Gate M **on aggregate flow**. At a posted size
+of 500 against a median touch depth of 148 an entrant is three times the resting queue; at 2,000,
+thirteen times. **They are then the book rather than a share of it**, and the flow reaching them is
+disproportionately the informed part the retention was averaged over.
+
+**The large-size rows are the least trustworthy and the only ones producing interesting money.** At
+the sizes where the assumption holds the magnitude is about **$1,200/yr**. As a *rate* it is roughly
+40% on ~$3,100 of capital, and Pass 27.1 is the standing reason that framing is not the question.
+
+---
+
 ## Pass 29 — Gate M run; the spread survives, 3.9% of it (2026-09-14)
 
 Gate M's null gate passed and the measurement ran. Result in

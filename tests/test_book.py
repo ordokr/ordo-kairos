@@ -10,7 +10,15 @@ from __future__ import annotations
 
 import unittest
 
-from kairos.book import Book, Fill, Level, cost_to_buy, parse_book, proceeds_from_sell
+from kairos.book import (
+    Book,
+    Fill,
+    Level,
+    cost_to_buy,
+    parse_book,
+    proceeds_from_sell,
+    queue_fills,
+)
 from kairos.costs import CONSERVATIVE
 
 RAW = {
@@ -142,6 +150,32 @@ class TestProceedsFromSellWalksTheBidBook(unittest.TestCase):
         for bad in (0, -1):
             with self.assertRaises(ValueError):
                 proceeds_from_sell(parse_book(RAW), bad)
+
+
+class TestQueueFills(unittest.TestCase):
+    """Gate 3.0. Gate M measured what a fill is worth; this is whether one happens.
+
+    An order joining the back of the queue at the touch fills only after the size already resting
+    there is consumed. Where a day's one-sided flow is smaller than that size, the entrant is never
+    filled and the strategy earns exactly zero, whatever the spread.
+    """
+
+    def test_flow_beyond_the_resting_queue_reaches_the_back_of_it(self):
+        self.assertAlmostEqual(queue_fills(1000.0, 400.0), 600.0, places=9)
+
+    def test_a_queue_deeper_than_the_flow_fills_nothing_rather_than_negatively(self):
+        self.assertEqual(queue_fills(400.0, 1000.0), 0.0)
+
+    def test_flow_exactly_consuming_the_queue_still_leaves_the_entrant_unfilled(self):
+        self.assertEqual(queue_fills(500.0, 500.0), 0.0)
+
+    def test_an_empty_touch_means_the_entrant_is_first_and_sees_all_of_it(self):
+        self.assertAlmostEqual(queue_fills(750.0, 0.0), 750.0, places=9)
+
+    def test_negative_inputs_are_refused_rather_than_clamped(self):
+        for bad in ((-1.0, 10.0), (10.0, -1.0)):
+            with self.assertRaises(ValueError):
+                queue_fills(*bad)
 
 
 class TestCrossedPriceIsNotChargedSpreadTwice(unittest.TestCase):

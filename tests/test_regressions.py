@@ -1129,6 +1129,40 @@ class TestPass29NullWorldsMustMatchTheRegimeTheyValidate(unittest.TestCase):
         self.assertIn("flatters the maker", src)
 
 
+class TestPass30QueuePositionCannotBeatPriority(unittest.TestCase):
+    """Pass 30. Gate 3.0's registration let an entrant at the BACK of the queue out-earn one at the
+    front, by specifying fills as ``max(0, flow - depth)`` with no cap on posted size.
+
+    The arithmetic was right and the model was absurd. At equal posted size, an order behind the
+    resting queue can never fill more than one ahead of it — that is what price priority *is*.
+    """
+
+    def test_at_equal_size_the_back_of_the_queue_never_fills_more_than_the_front(self):
+        from kairos.book import queue_fills
+
+        size = 25.0
+        for flow, depth in ((5_420.0, 148.0), (100.0, 90.0), (50.0, 500.0), (0.0, 10.0)):
+            with self.subTest(flow=flow, depth=depth):
+                back = min(queue_fills(flow, depth), size)
+                front = min(flow, size)
+                self.assertLessEqual(back, front + 1e-9,
+                                     "an order behind the queue cannot out-fill one ahead of it")
+
+    def test_the_runner_reports_a_size_curve_rather_than_one_size(self):
+        """C11: the registration froze no size, so no single point may stand as the verdict."""
+        import gate3
+
+        self.assertGreaterEqual(len(gate3.SIZES), 3, "a design variable is not held at one value")
+        self.assertIn("SIZES", (ROOT / "gate3.py").read_text(encoding="utf-8"))
+
+    def test_the_retention_it_multiplies_is_sourced_from_the_measurement(self):
+        """A constant that decides a verdict must trace to a run, not to a guess."""
+        import gate3
+
+        self.assertAlmostEqual(gate3.RETENTION, 0.00039 / 0.01000, places=12)
+        self.assertLess(gate3.RETENTION, 0.05, "3.9% of the quoted half-spread, per scanm.py")
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

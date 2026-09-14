@@ -1015,6 +1015,95 @@ diversity that measurably reduces residual correlation over vendor diversity tha
 
 ---
 
+### Gate 3.0 — Class M: does the fill arrive at all?
+
+> **REGISTERED 2026-09-14, before it was built and before any book depth was fetched for the
+> measured set.** Runs: `python gate3.py`.
+>
+> **STATUS: RUN 2026-09-14 — BOTH VARIANTS CLEAR. Class M survives.** 248 books measured; median
+> touch depth **148 contracts** against median one-sided daily flow of **5,420** — the queue turns
+> over ~36 times a day and only **2.4%** of markets fail to clear it. At 25 contracts posted:
+> (a) **$1,228/yr**, (b) **$780/yr**, against a $104.70 floor.
+>
+> **Both pre-committed expectations were refuted**: these markets are wide and *active*, not quiet,
+> and **(a) beats (b) at every size** because paying two ticks for priority is wasted when the queue
+> turns over anyway. The first gate in this programme whose adverse prior did not survive contact.
+>
+> **The verdict is size-dependent and this registration froze no size** (C11 violation,
+> `CORRECTIONS.md` Pass 30.2), so the curve is the result: `$246` at 5 contracts to `$76,078` at
+> 2,000. The large rows are the least trustworthy — they rest on a 3.9% retention measured on
+> *aggregate* flow, and an entrant posting 500 against a 148-deep touch **is** the book rather than a
+> share of it. See [`GATE3-RESULTS.md`](GATE3-RESULTS.md).
+
+Gate M measured what a fill is **worth**: `R(60) = +0.00039`, 3.9% of the quoted half-spread. It
+measured nothing about whether a fill **happens**. That is this gate, and it is the last cheap
+question in the programme.
+
+**Why no null gate.** A7 requires one before any *search*. This is a single registered arithmetic on
+two measured quantities — resting depth and realised flow — with no hypothesis space to search and
+no estimator to be fooled, exactly as Gates D.0 and 4.0 were. Saying so explicitly because skipping a
+null gate is normally the error, not the plan.
+
+#### Decision-rule specification — units, weighting, preconditions
+
+*The house rule since `CORRECTIONS.md` Pass 28.2, applied before anything is decided.*
+
+| element | value |
+|---|---|
+| **Units of the threshold** | **dollars per year, absolute.** Never a rate — Pass 27.1, where a 43% return on $24.40 cleared a rate floor and meant nothing |
+| **Weighting** | **flow-weighted across markets**, unweighted reported beside it — Pass 28.1 |
+| **Preconditions applied** | the longshot band (Pass 26.1) and tick room > 1 (Gate M.0), identical to the set Gate M measured `R` on, so the two numbers multiply legitimately |
+| **Primary statistic** | expected annual fills × `R(60)`, at measured depth and measured flow |
+| Floor | **$104.70/yr**, 10× the taker ceiling, unchanged from Gate M.0 so the two are comparable |
+
+#### The two strategies an entrant actually has, and both are measured
+
+| | queue position | capture per fill |
+|---|---|---|
+| **(a) Join the back** | behind all resting size at the touch | the full quoted half-spread × retention |
+| **(b) Improve by one tick** | first | `(spread − 2 ticks) / 2` × retention |
+
+(a) fills only after the resting queue is consumed, so expected daily fills are
+`max(0, side_flow − touch_depth)`. **Where a day's one-sided flow is smaller than the size already
+resting, an entrant is never filled and the strategy earns exactly zero**, whatever the spread.
+
+(b) trades price for priority. It is reported as the **generous** variant — it assumes an entrant is
+never outbid, which is false the moment an incumbent requotes, and it collects all the adverse
+selection by being first in line for informed flow. `R(60)` was measured on aggregate flow, not on
+best-quote flow, so applying it to (b) **overstates** (b).
+
+#### Pre-committed expectation
+
+Gate M.0 measured 77.4% of flow sitting in one-tick markets, which are excluded here by the tick-room
+precondition. The remaining markets are wide **because they are quiet**, so the expectation is that
+flow per market is small relative to resting depth and that (a) approaches zero fills. **The
+interesting number is (b)**, and the expectation is that it clears the $104.70 floor while remaining
+far below anything that would fund the work. Recorded so neither outcome can be presented as a
+surprise.
+
+#### Stopping and decision rules — written before the numbers
+
+Fetch the book once per eligible market, to the depth the API reaches, and stop. Below **50 markets
+with a usable book**, WITHHELD as apparatus (A1, G12).
+
+| outcome | action |
+|---|---|
+| Neither variant clears the floor | **REFUTED. Class M closes and the registered programme ends** — every hypothesis class tested and none survives |
+| Only (b) clears | Class M survives **only as a quote-improvement strategy**, and the next question is competitive response, which is a new registration and is not licensed here |
+| Both clear | Class M survives. Gate 4 (capacity) re-runs against the maker numbers rather than the taker ones |
+
+#### What it does not cover
+
+- **Competitive response.** Nothing models an incumbent requoting when improved upon, which is the
+  central risk of variant (b).
+- **Adverse selection at the touch.** `R(60)` is an aggregate-flow number applied to best-quote fills,
+  which flatters (b).
+- **Maker rewards** remain excluded, and cut for.
+- **Partial fills and cancellation** are unmodelled.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 3 — Execution realism
 
 > **STATUS: NOT RUN — blocked on having a candidate, not forgotten.** Class A was rejected (Look 3)
