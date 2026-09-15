@@ -1814,7 +1814,7 @@ rather than in the market, and all invisible from the results tables.
   3. Look #2's registered disjointness rule depends on reconstructing look #1's 731 events from
      those pages. `replicate.py` therefore checks the reconstruction against the recorded count and
      **voids the run** on mismatch rather than proceeding on a partially-overlapping set.
-  Mitigation: `ORDO_KAIROS_STATE` set to `C:/Users/Administrator/.cache/ordo-kairos`, outside both
+  Mitigation: `ORDO_KAIROS_STATE` set to `<a cache dir outside the repo>`, outside both
   `%TEMP%` and the publish-eligible repo tree.
 - **A passing test that checked the wrong property.** `test_the_signal_really_is_concentrated_not_diffuse`
   passed through every version of 8.8. It asserted *how much* of the range was mispriced and never

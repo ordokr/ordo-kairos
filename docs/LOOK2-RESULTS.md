@@ -92,7 +92,7 @@ becomes unreproducible.
 
 Mitigations, both landed:
 
-- `ORDO_KAIROS_STATE` set to `C:/Users/Administrator/.cache/ordo-kairos` — outside `%TEMP%` and
+- `ORDO_KAIROS_STATE` set to `<a cache dir outside the repo>` — outside `%TEMP%` and
   outside the publish-eligible repo tree.
 - `cache_dir()` now warns once per process, on stderr, when it falls back to temp, and says why the
   fallback is dangerous rather than merely non-durable.

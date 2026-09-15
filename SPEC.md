@@ -1,6 +1,9 @@
 # Ordo Kairos — Specification
 
-**Status:** v0.1, 2026-09-08. Decision core only. No venue binding, no capital, no network.
+**Status:** superseded as a status document. This file records the original design intent and the
+end that governs it, both still current. For what was actually measured, and the verdict, see
+[`README.md`](README.md) and [`docs/PROTOCOL.md`](docs/PROTOCOL.md). The repository now sweeps live
+public APIs across three venues; it still holds no capital and places no orders.
 
 ---
 

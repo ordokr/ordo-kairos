@@ -1,101 +1,126 @@
 # Ordo Kairos
 
-A decision core for event-contract markets. **Not a trading bot.** A pre-registered instrument for
-deciding, on measured evidence and without risking capital, whether a trading bot is worth building.
+**A falsification-first instrument for deciding whether a prediction-market trading bot is worth
+building — and the measured answer, which is no.**
 
-Read [`SPEC.md`](SPEC.md) first — it carries the evidence and the kill rule.
+Not a trading bot. Not a framework. It never placed an order, and that was the point: find out what
+the ceiling is *before* spending capital, not after.
 
-## The one-paragraph version
+Eleven hypothesis classes, seventeen gates, three event-contract venues plus crypto perpetuals,
+zero dollars risked.
 
-Frontier LLM agents told to trade lose money: **all of them** on KellyBench (best −8%, several ruined),
-**−16% to −31%** on live Kalshi capital in Prediction Arena. But two of seven models *were* profitable on
-PolyBench, so forecasting competence is an empirical hypothesis to be tested per model — while execution
-discretion is simply removed. The scarce unknown is not how to size a bet; fractional Kelly is well
-understood. It is **whether there is a repeatable edge worth sizing at all**. So this repo builds, in
-causal order: a friction-adjusted market baseline `q*` that the forecaster must actually beat, a proper
-score differential against it, a capacity model that asks whether the edge is a business, and only then
-sizing — which governs the wealth path but **cannot create edge**. It abstains by default and its null
-decision is *kill*.
+---
 
-## Status
+## The answer
 
-`v0.2` — decision core only. No venue binding, no network, no capital, no LLM wired in.
-101 tests, zero third-party dependencies.
+| class | hypothesis | measured result |
+|---|---|---|
+| **A** | A forecaster can beat market consensus | **REJECTED** — 1,966 fresh events, 983 out of sample; effect `+0.00371` failed both the registered α and a 1% materiality floor |
+| **B** | Structural (negRisk) arbitrage | **0 of 78** positive |
+| **C** | Cross-venue convergence (Polymarket↔Kalshi) | **$10.47/yr** |
+| **M** | Maker spread capture | keeps **3.9%** of the half-spread; **96.1%** lost to adverse selection |
+| **M2** | Maker rebates + holding rewards | **$139,450/yr** — but **77% is subsidy**, needs ~$100k, and holding rewards are a **net loss** against the capital they're paid on |
+| **R** | Liquidity-reward capture | sign flips on an accounting choice |
+| **F** | Delta-neutral funding carry | **REFUTED** — best **+2.85%**/yr against a 6% capital hurdle; every higher leverage was liquidated |
+| **S** | Does the subsidy persist? | **NO VERDICT** — one revision is not a cadence; annual withdrawal hazard bounded only at **≤94.5%** |
+| **K.0** | Is a maker better paid on Kalshi? | **NO VERDICT** — 26.6% of flow with room vs Polymarket's 22.6%, interval straddles |
+| **SM.0** | Is a *recreational* counterparty less toxic? (Smarkets) | **NO VERDICT** — half-spread 0.0063 vs 0.005, interval straddles |
+| **N.0** | Be the first maker in an empty book | **REFUTED ON CAPACITY** — new listings are 16× wider, 93.7% unquoted, 84× thinner queues, and carry **0.11%** of flow |
 
-## Layout — in causal order, information first
+**The two constraints that killed everything:** 73–77% of traded flow sits in markets quoted at a
+single tick, where an entrant cannot improve the quote; and behind those quotes is a queue up to
+6,284 deep. Both were measured on two venues independently.
 
-| Module | Role |
-|---|---|
-| `kairos/baseline.py` | **`q_raw → q*`.** Settlement un-discounting + logistic recalibration. The price is not the probability |
-| `kairos/score.py` | **`ΔS = S(p,y) − S(q*,y)`** — the go/no-go metric. Trial ledger, deflated Sharpe |
-| `kairos/economics.py` | edge × capacity × frequency − costs. Effective sample size (clusters, not rows) |
-| `kairos/costs.py` | Fees, half-spread, settlement wedge — a conservative *screen*, not a validator |
-| `kairos/calibration.py` | Isotonic (PAVA) recalibration, market-anchored blending, reliability stats |
-| `kairos/gate.py` | Abstention gate. Default `ABSTAIN`; fails closed on unmeasured manipulability |
-| `kairos/sizing.py` | `(p, q*) → stake`. Proper betting → shrunk fractional Kelly → caps |
+**The one thing that paid was a subsidy, not an edge** — money the venue chooses to hand out, which
+it can stop handing out on a Tuesday.
 
-Sizing is last on purpose. Pure stdlib, so it ports to Opifex Rust unchanged in structure.
+## Numbers worth stealing
 
-## Governing documents
+If you are about to build something in this space, these are the figures that would have saved us
+the time:
 
-| Doc | Role |
-|---|---|
-| [`docs/AXIOMS.md`](docs/AXIOMS.md) | Standing rules that outrank convenience. Cite by number |
-| [`docs/EVIDENCE.md`](docs/EVIDENCE.md) | Every empirical claim, graded, with what it does **not** license |
-| [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | Pre-registered Stage 0. Gate 0 is null-world falsification of Kairos itself |
-| [`docs/CORRECTIONS.md`](docs/CORRECTIONS.md) | Claims withdrawn, and why. Anti-drift record |
-| [`SPEC.md`](SPEC.md) | Design and market-selection rationale |
+- A maker retains **3.9%** of the quoted half-spread. Adverse selection takes the rest.
+- **77.4%** (Polymarket) / **73.4%** (Kalshi) of dollar flow is pinned at one tick.
+- New listings carry **0.11%** of flow. The wide window is real and closes before anyone arrives.
+- Taker fee is `C × feeRate × p(1−p)`, `takerOnly: true` on **11 of 11** live schedules — makers pay
+  nothing, and the published rate table was **stale** the day we checked it.
+- Polymarket maker rebate ≈ **3.6×** the retained spread, and unlike liquidity rewards it does
+  **not** dilute with competition: pool and share scale together.
+- Holding rewards pay **3.25%**/yr on capital. Charge that capital anything reasonable and it is a
+  net loss.
+- Funding carry: the naive backtest reports **+4.71%** where the truth is **−0.67%**, because it
+  never looks at the price path.
 
-## Status: nothing is validated yet
+## Why believe any of it
 
-This repo has **not demonstrated a single out-of-sample edge.** `demo.py` shows the machinery runs;
-its numbers are fitted and scored on the same synthetic data and are **not evidence** of anything
-(AXIOMS A5).
+Every gate was **registered in `docs/PROTOCOL.md` before it was built** — hypothesis, units,
+weighting, preconditions, decision rule, and a pre-committed expectation, all written while the
+answer was still unknown. Amendments are recorded, never applied silently.
 
-## Gate 0 — null-world falsification
+Three pieces of machinery do the actual work, and they are the reusable part:
+
+- **Null-world gating** (`kairos/nullworld.py`) — a pipeline must find **nothing** in worlds built to
+  contain nothing before it may touch real data, judged on an exact binomial tail *and* a power
+  floor. It caught an estimator reporting profit in **35%** of replications of a world that
+  liquidated in **100%** of them.
+- **Three-state verdicts** (`kairos/validity.py`) — profit / loss / **no verdict**. Four gates
+  returned no verdict and were right to. An instrument's ceiling is not the world's floor.
+- **An executable corrections log** (`docs/CORRECTIONS.md`, 38 passes) — every defect this project
+  made, recorded, plus a meta-test that **fails the build** if a correction is written in prose
+  without a runnable guard.
+
+The corrections log is not an apology section. It is the most useful file here, and the finding it
+carries is the one that generalises furthest:
+
+> Across 38 recorded defects, **every single one was in the sentences surrounding the measurement** —
+> units, weighting, preconditions, sampling frame, validation regime. **Never in the arithmetic.**
+> The maths was always right. What it meant was what broke.
+
+Examples, all caught before they reached a conclusion: a **53% arbitrage** that was pagination
+truncation; a **$3,257,641/yr** reward figure computed at the exact point where the published formula
+pays zero; holding rewards booked as **+$12,675** when they were **−$10,725**; a tick-room statistic
+that read **100%** on a venue purely because its tick was half the size.
+
+## What this does not claim
+
+- It is **not** a claim that no edge exists — only that none of eleven classes cleared a floor at
+  retail capital with no latency advantage, on the venues and dates measured.
+- Venue mechanics change. A published fee table went stale inside a day during this work.
+- No LLM was in any order path, and no order path exists.
+- **Nothing here ever traded.** No broker integration, no live capital, no executor.
+
+## Reproduce
+
+Python 3.11+. **Zero third-party dependencies** — standard library only.
 
 ```bash
-python gate0.py            # full run (~30 min)
-python gate0.py --quick    # indicative only, not a gate result
+python gatem.py      # maker spread capture and adverse selection
+python gatem2.py     # rebates and holding rewards
+python gatef.py --nulls && python gatef.py   # funding carry, null gate first
+python gates.py      # subsidy persistence
+python gatek.py      # Kalshi
+python gatesm.py     # Smarkets
+python gaten.py      # new listings
+python -m unittest discover -s tests   # 663 tests
 ```
 
-Before asking whether this pipeline can find an edge, it asks whether it reliably **fails** to find
-one that does not exist — and whether it can still see one that does. Three protocols are compared
-on the same synthetic worlds so the harness shows which discipline buys what:
+Gates hit live public APIs and are unauthenticated. Figures move between runs as the universe
+drifts; the results documents record what was measured on the day.
 
-| Protocol | Selection | Inference | Role |
-|---|---|---|---|
-| `naive` | fit + select on all data | IID, clustering ignored | exhibit — expected to fail |
-| `cluster` | fit + select on all data | cluster-robust | isolates selection bias |
-| `kairos` | fit / select / **sealed holdout** | cluster-robust | the gate condition |
+## Layout
 
-Every positive control is also run through an **oracle** built from the world's own generating
-parameters. Nothing can beat it, so its detection rate is the power ceiling — which is what
-separates *"the pipeline is inert"* from *"the sample is too small."*
+| path | what |
+|---|---|
+| `docs/PROTOCOL.md` | every registration, in order, with amendments |
+| `docs/CORRECTIONS.md` | 38 passes of recorded defects |
+| `docs/AXIOMS.md` | the rules the gates are judged against |
+| `docs/*-RESULTS.md` | one per gate, 22 of them |
+| `kairos/` | the estimators and the null worlds |
+| `gate*.py`, `scan*.py` | runners, one per gate |
+| `tests/` | 663 tests, including the corrections meta-guard |
 
-### The finding that constrains the whole programme
+## Licence
 
-Oracle power against a heavily compressed market, one-sided α = 0.05:
-
-| independent events | 20 | 40 | 80 | 160 | 320 | 640 |
-|---|---|---|---|---|---|---|
-| oracle power | 0.183 | 0.333 | 0.500 | 0.667 | **0.933** | 1.000 |
-
-**A market-relative forecasting edge needs hundreds of independent events to detect — not dozens**,
-and this is an *upper* bound, since the oracle is unbeatable and the control's edge is larger than
-anything realistic. Any evaluation set below ~300 independent events cannot support a fund/kill
-decision, however many contract rows it holds.
-
-## Run the tests
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-## Rules that outrank convenience
-
-1. No secrets, positions, PnL, or account IDs in this repo. Runtime state goes to `$ORDO_KAIROS_STATE`,
-   which must resolve outside `C:/src`.
-2. No LLM in the order path.
-3. Log every configuration to the trial ledger *before* reading its result.
-4. ROI is reported, never selected on.
+**Not yet declared.** Absent a licence, default copyright applies and no reuse is permitted — which
+would be an odd state for a repository whose stated value is figures worth stealing. Pick one before
+relying on that section above.
