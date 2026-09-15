@@ -3,11 +3,35 @@
 **A falsification-first instrument for deciding whether a prediction-market trading bot is worth
 building — and the measured answer, which is no.**
 
-Not a trading bot. Not a framework. It never placed an order, and that was the point: find out what
-the ceiling is *before* spending capital, not after.
+Not a trading bot. Not a framework. It never placed an order, and that was the point.
 
-Eleven hypothesis classes, seventeen gates, three event-contract venues plus crypto perpetuals,
-zero dollars risked.
+### The hypothesis
+
+> **A retail participant, with no latency advantage and no private information, can extract a
+> risk-adjusted return from event-contract markets that clears the cost of the capital it locks.**
+
+Stated so it can fail, and tested as **eleven separate hypothesis classes** — forecasting skill,
+structural arbitrage, cross-venue convergence, market making, subsidy capture, funding carry,
+counterparty selection, and new-listing timing — because "can you make money here" is not one
+question and fails for a different reason each time.
+
+### Why it exists
+
+The usual way to answer that question is to build the bot and read the brokerage statement. That
+answer is accurate, expensive, and arrives late. This is the cheap version: **measure the ceiling
+before spending anything**, and refuse to report a number the instrument cannot support.
+
+Seventeen gates, three event-contract venues plus crypto perpetuals, **zero dollars risked**.
+
+### What it is worth to you
+
+- **If you are about to build in this space** — the measured ceilings below are the months of work
+  and the capital you do not have to spend to find them out.
+- **If you are evaluating someone else's trading bot** — the exhibits here show what the same
+  strategy looks like before and after its costs are charged honestly. One estimator reported
+  `+4.71%` where the truth was `−0.67%`.
+- **If you write quantitative code of any kind** — the reusable part is the machinery, not the
+  finance: null-world gating, three-state verdicts, and a corrections log that fails the build.
 
 ---
 
@@ -57,6 +81,23 @@ Every gate was **registered in `docs/PROTOCOL.md` before it was built** — hypo
 weighting, preconditions, decision rule, and a pre-committed expectation, all written while the
 answer was still unknown. Amendments are recorded, never applied silently.
 
+### The limit of that claim, stated rather than glossed
+
+**Only 2 of 8 gates can prove it from the artifact.** Class C and Class S have a registration commit
+that lands *before* the commit adding their runner. The other six — M2, F, R, K, SM, N — committed
+registration and implementation **together**, so a reader cannot distinguish "registered first" from
+"back-filled to match the result."
+
+The claim is true as a fact about how the work was done. It is **not independently verifiable for
+most gates**, and a repository whose entire value rests on pre-registration should say so in its own
+README rather than let the reader assume. A falsifier in `tests/test_readme_claims.py` measures the
+ratio and will fail if it gets worse; future gates land their registration in its own commit.
+
+What *is* independently checkable: the pre-committed expectations, which are written next to results
+that frequently contradict them. Gates K.0 and SM.0 both recorded an expectation that turned out
+**directionally wrong**, and Gate S's registration contains four defects the run exposed. Back-filled
+registrations do not predict their own failures.
+
 Three pieces of machinery do the actual work, and they are the reusable part:
 
 - **Null-world gating** (`kairos/nullworld.py`) — a pipeline must find **nothing** in worlds built to
@@ -65,14 +106,14 @@ Three pieces of machinery do the actual work, and they are the reusable part:
   liquidated in **100%** of them.
 - **Three-state verdicts** (`kairos/validity.py`) — profit / loss / **no verdict**. Four gates
   returned no verdict and were right to. An instrument's ceiling is not the world's floor.
-- **An executable corrections log** (`docs/CORRECTIONS.md`, 38 passes) — every defect this project
+- **An executable corrections log** (`docs/CORRECTIONS.md`, 39 passes) — every defect this project
   made, recorded, plus a meta-test that **fails the build** if a correction is written in prose
   without a runnable guard.
 
 The corrections log is not an apology section. It is the most useful file here, and the finding it
 carries is the one that generalises furthest:
 
-> Across 38 recorded defects, **every single one was in the sentences surrounding the measurement** —
+> Across 39 recorded defects, **every single one was in the sentences surrounding the measurement** —
 > units, weighting, preconditions, sampling frame, validation regime. **Never in the arithmetic.**
 > The maths was always right. What it meant was what broke.
 
@@ -101,7 +142,7 @@ python gates.py      # subsidy persistence
 python gatek.py      # Kalshi
 python gatesm.py     # Smarkets
 python gaten.py      # new listings
-python -m unittest discover -s tests   # 663 tests
+python -m unittest discover -s tests   # 681 tests
 ```
 
 Gates hit live public APIs and are unauthenticated. Figures move between runs as the universe
@@ -112,15 +153,23 @@ drifts; the results documents record what was measured on the day.
 | path | what |
 |---|---|
 | `docs/PROTOCOL.md` | every registration, in order, with amendments |
-| `docs/CORRECTIONS.md` | 38 passes of recorded defects |
+| `docs/CORRECTIONS.md` | 39 passes of recorded defects |
 | `docs/AXIOMS.md` | the rules the gates are judged against |
 | `docs/*-RESULTS.md` | one per gate, 22 of them |
 | `kairos/` | the estimators and the null worlds |
 | `gate*.py`, `scan*.py` | runners, one per gate |
-| `tests/` | 663 tests, including the corrections meta-guard |
+| `tests/` | 681 tests, including the corrections meta-guard |
 
 ## Licence
 
-**Not yet declared.** Absent a licence, default copyright applies and no reuse is permitted — which
-would be an odd state for a repository whose stated value is figures worth stealing. Pick one before
-relying on that section above.
+**Apache-2.0** — see [`LICENSE`](LICENSE). Take the numbers, take the machinery, attribute where it
+helps you. The stock copyright placeholder in the appendix is left unfilled, matching the other
+Apache-licensed repositories in this org.
+
+## Reading this repository critically
+
+The front page makes claims about itself, and the front page was never gated. So it has falsifiers
+too: [`tests/test_readme_claims.py`](tests/test_readme_claims.py) checks every count against the
+tree, every headline figure against a results document, the "never traded" promise against every
+source file, and the pre-registration claim against git history — where it **fails partially, by
+design**, and the README says so above.

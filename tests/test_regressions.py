@@ -1604,6 +1604,40 @@ class TestPass38AnEmptyBookIsSignalNotRefusal(unittest.TestCase):
         self.assertLess(cap, straddle, "the capacity branch must be evaluated first")
 
 
+class TestPass39TheFrontPageIsGatedToo(unittest.TestCase):
+    """Pass 39: the README asserted eleven results, six counts and a methodological virtue, and
+    was the only document in the repository that had never been falsified against anything.
+
+    The guard is that the falsifier suite exists and keeps covering the claims that matter -- above
+    all the pre-registration claim, which git can only partly support (39.1)."""
+
+    def test_the_readme_falsifier_suite_exists_and_covers_the_load_bearing_claims(self):
+        src = (ROOT / "tests" / "test_readme_claims.py").read_text(encoding="utf-8")
+        for required in ("TestRegistrationPrecedesImplementation", "TestNothingEverTraded",
+                         "TestZeroDependencies", "TestHeadlineFiguresTraceToEvidence",
+                         "TestCountsAreTrue"):
+            self.assertIn(required, src, f"README falsifier {required} was removed")
+
+    def test_the_readme_still_discloses_that_pre_registration_is_only_partly_provable(self):
+        """39.1: six of eight gates committed registration and runner together. Removing that
+        disclosure would restore the overclaim the pass was written to correct."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Only 2 of 8 gates can prove it from the artifact", readme)
+        self.assertIn("back-filled", readme.lower())
+
+    def test_a_falsifier_may_not_invoke_the_suite_that_contains_it(self):
+        """39.3: the first test-count falsifier shelled out to `unittest discover`, rediscovered
+        itself and recursed until killed. A test that runs the test suite is not a test."""
+        src = (ROOT / "tests" / "test_readme_claims.py").read_text(encoding="utf-8")
+        self.assertNotIn("unittest\", \"discover", src)
+        self.assertNotIn("'unittest', 'discover'", src)
+
+    def test_the_licence_permits_the_reuse_the_readme_invites(self):
+        """39.4: a repo whose stated value is 'numbers worth stealing' must permit the stealing."""
+        self.assertTrue((ROOT / "LICENSE").exists())
+        self.assertIn("Apache License", (ROOT / "LICENSE").read_text(encoding="utf-8"))
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

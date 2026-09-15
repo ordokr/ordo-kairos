@@ -8,6 +8,69 @@ Newest pass at the top.
 
 ---
 
+## Pass 39 — The pre-registration claim is true and mostly unprovable (2026-09-14)
+
+The README was rewritten as the project's public face and then, for the first time, **falsified
+against itself** (`tests/test_readme_claims.py`). One claim failed.
+
+### 39.1 Six of eight gates committed their registration and their runner together
+
+The README asserts every gate was registered before it was built. Checked against git:
+
+| gate | registration commit precedes runner? |
+|---|---|
+| Class C, Class S | **yes** — separate commits |
+| Class M2, F, R, K, SM, N | **no** — same commit |
+
+The claim is **true as a fact about how the work was done** and **not verifiable from the artifact
+for six of eight gates.** A reader cannot distinguish "registered first" from "back-filled to match
+the result," and that is precisely the distinction the whole repository is built to enforce. The
+single claim carrying all the credibility is the one the history cannot support.
+
+This is the same failure class as every other pass, applied to the project rather than a gate: the
+arithmetic was right, and the sentence around it promised more than the evidence carried.
+
+Fixed three ways rather than by softening the sentence:
+
+1. The README **discloses the 2-of-8 ratio** in its own "why believe any of it" section.
+2. A falsifier measures the ratio and **fails if it gets worse**, which is the only honest way to
+   hold a claim history cannot prove.
+3. Future gates land their registration in **its own commit** before the runner exists.
+
+**What does survive independently:** the pre-committed expectations. Gates K.0 and SM.0 both recorded
+predictions that turned out directionally wrong, and Class S's registration contains four defects its
+own run exposed. A back-filled registration does not predict its own failures.
+
+### 39.2 The front page was the only ungated document in the repository
+
+Every number here had to survive a registration, a null world and a decision rule. The README
+asserted eleven results, six counts and a methodological virtue on nothing but the author's word —
+and it is the document most people will read and the only one most will read.
+
+`tests/test_readme_claims.py` now checks each count against the tree, each headline figure against a
+results document, the "never traded" promise against every source file (no POST, no signing, no
+credentials, no `data=` on a Request), the zero-dependency claim by AST, and the pre-registration
+claim against git history. It caught a real inconsistency on its first run: `LICENSE` had been added
+while the README still read "not yet declared."
+
+### 39.3 A test that runs the test suite is not a test
+
+The first version of the test-count falsifier shelled out to `unittest discover`, which rediscovers
+the file containing it and re-runs the suite inside itself. Unbounded recursion; it hung for ten
+minutes before being killed. Replaced with a static AST count of test methods.
+
+Recorded because it is a small, pure instance of the recurring lesson: the arithmetic (counting
+tests) was never in question, and the defect was entirely in how the count was obtained.
+
+### 39.4 Licence
+
+Apache-2.0, matching the plurality of licensed repositories in this org and the flagship public one.
+There is **no single house licence** — of 66 repositories, 36 declare none, 12 are Apache-2.0, 10
+MIT, 7 custom and 1 GPL-3.0 — so "the same licence as everything else" was a premise that did not
+survive checking either.
+
+---
+
 ## Pass 38 — Gate N.0 run; two flooring helpers reused where the floor was the wrong answer (2026-09-14)
 
 Class N registered and run. Result in [`GATEN-RESULTS.md`](GATEN-RESULTS.md). **REFUTED ON
