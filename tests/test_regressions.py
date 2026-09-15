@@ -1407,6 +1407,58 @@ class TestPass35ADesignVariableIsNotHeldAtOneValue(unittest.TestCase):
         self.assertLess(rocs[-1], rocs[0], "the largest rung must not out-earn the smallest")
 
 
+class TestPass36AThresholdComparisonNeedsAnInterval(unittest.TestCase):
+    """Pass 36.1: Class K registered "share <= 22.6% -> REFUTED" with no uncertainty on either
+    side. As registered it returns NOT REFUTED at 26.6%; with an interval it returns NO VERDICT.
+
+    This is Pass 29 repeating in a registration written after Pass 29 was recorded, which is why
+    the guard below is about the *shape* of the comparison rather than about one estimator."""
+
+    def test_the_runner_routes_a_venue_comparison_through_an_interval(self):
+        src = (ROOT / "gatek.py").read_text(encoding="utf-8")
+        self.assertIn("weighted_share_ci", src)
+        self.assertIn("NO VERDICT", src, "three-state discipline, not a two-way threshold")
+        self.assertIn("ci[0] <= POLYMARKET_FLOW_WITH_ROOM <= ci[1]", src)
+
+    def test_an_interval_that_straddles_the_comparator_cannot_be_a_verdict(self):
+        from kairos.inference import weighted_share_ci
+
+        # A sample whose share sits near the comparator must not exclude it.
+        flags = [True] * 23 + [False] * 77
+        ci = weighted_share_ci(flags, [1.0] * 100, seed=11)
+        self.assertLessEqual(ci[0], 0.226)
+        self.assertGreaterEqual(ci[1], 0.226)
+
+    def test_concentration_of_weight_widens_rather_than_narrows_the_interval(self):
+        """Pass 36.2: the first test written here asserted the opposite and the code was right.
+        A resample of n units omits any given one in ~37% of draws at n=100, so a share carried
+        by one market is barely estimated and must not report a narrow interval."""
+        from kairos.inference import weighted_share_ci
+
+        flags = [True] + [False] * 99
+        concentrated = weighted_share_ci(flags, [999.0] + [1.0] * 99, seed=3)
+        spread_out = weighted_share_ci([True] * 50 + [False] * 50, [1.0] * 100, seed=3)
+        self.assertGreater(concentrated[1] - concentrated[0], spread_out[1] - spread_out[0])
+
+    def test_spread_is_measured_in_ticks_because_the_venue_runs_three_structures(self):
+        """Cents are not comparable across linear_cent, deci_cent and tapered_deci_cent."""
+        import gatek
+
+        m = {"status": "active", "yes_bid_dollars": "0.40", "yes_ask_dollars": "0.42",
+             "volume_24h_fp": "100", "price_ranges": [{"start": "0", "end": "1", "step": "0.01"}]}
+        spread, tick, mid, flow = gatek.quote(m)
+        self.assertAlmostEqual(spread / tick, 2.0, places=9)
+        self.assertAlmostEqual(mid, 0.41, places=9)
+
+    def test_a_market_with_no_flow_is_refused_rather_than_counted_at_zero(self):
+        """AXIOMS G5: a market that traded nothing has no maker economics to measure."""
+        import gatek
+
+        m = {"status": "active", "yes_bid_dollars": "0.40", "yes_ask_dollars": "0.42",
+             "volume_24h_fp": "0", "price_ranges": [{"start": "0", "end": "1", "step": "0.01"}]}
+        self.assertEqual(gatek.quote(m), "no_flow")
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

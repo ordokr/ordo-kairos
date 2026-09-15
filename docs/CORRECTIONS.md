@@ -8,6 +8,65 @@ Newest pass at the top.
 
 ---
 
+## Pass 36 — Gate K.0 run; a registered rule that compared two bare point estimates (2026-09-14)
+
+Class K registered and run. Result in [`GATEK-RESULTS.md`](GATEK-RESULTS.md). **NO VERDICT** —
+Kalshi's flow with room to quote is **26.6%, 95% CI [18.4%, 39.1%]**, against Polymarket's **22.6%**.
+
+### 36.1 The registered decision rule had no interval on either side of its comparison
+
+Class K's rule read: *"Flow share with tick room ≤ 22.6% → REFUTED; > 22.6% → NOT REFUTED."* A bare
+threshold on a bare point estimate, with no uncertainty on the measurement and none on the
+comparator.
+
+Run as registered it returns **NOT REFUTED at 26.6%**. With a bootstrap interval it returns **NO
+VERDICT**, because [18.4%, 39.1%] contains 22.6% and a 4-point gap inside a 20.7-point-wide interval
+distinguishes nothing.
+
+**This is Pass 29 repeating.** Gate M's null gate failed on exactly this: medians right, single
+replications wrong 20–47% of the time, fixed by adding intervals and a third verdict state. The
+lesson was recorded, and Class K's registration was still written without one. Recording a
+correction does not immunise the next registration against the same mistake — only a guard does, and
+the guard added then was specific to Gate M's estimator.
+
+Fixed by adding `kairos.inference.weighted_share_ci` (i.i.d. percentile bootstrap over **markets**,
+the independent unit — distinct from `microstructure.bootstrap_ci`, which blocks a time series) and
+routing the verdict through the three-state discipline.
+
+### 36.2 A test asserted a property the statistic should not have, and the statistic was right
+
+The first version of `test_weight_decides_the_share_not_the_count` asserted that with one market
+carrying 91% of the weight the interval's **lower** bound must exceed 0.5. It came back **0.0** and
+the test failed.
+
+The implementation was correct. A bootstrap resample of 100 units omits any given unit in
+`(99/100)^100 ≈ 37%` of draws, so a share resting on a single market genuinely is near-unestimable,
+and a narrow interval there would have been a lie of precision. The **assertion about what the
+statistic should say** was wrong — which is Pass 28.2's finding one more time: the arithmetic was
+right and the sentence about it was not.
+
+The test now encodes the true property: **concentration of weight widens the interval**, and that is
+exactly why Gate K.0's own interval is 20.7 points wide.
+
+### 36.3 The second venue cannot answer the question that made the first one interesting
+
+Kalshi's market API exposes **no fee, maker, taker, rebate or reward field whatsoever**, and
+`kairos/kalshi.py` has carried the published schedule as unverified since 2026-09-09. Gate M2's
+entire economics — `rebateRate × feeRate × p(1-p)`, 77% of the gross — has **no measurable
+counterpart** on Kalshi from public data.
+
+Declared in the registration before the run, so the gate was scoped to the spread alone rather than
+quietly shrinking once the fields turned out to be missing.
+
+### 36.4 The pre-committed expectation was directionally wrong, and recording it is why that is visible
+
+The registration predicted Kalshi would look **worse** (a 1c tick on a $1 contract is coarse) and
+that the gate would **refute**. The point estimate went the other way. Had no expectation been
+registered, +4 points could have been narrated as encouraging rather than as noise inside an
+interval. The expectation was wrong; the machinery that made the wrongness legible worked.
+
+---
+
 ## Pass 35 — Gate S's payback table held size at one value, and it hid the answer (2026-09-14)
 
 ### 35.1 A C11 violation inside the analysis whose registration demanded a curve

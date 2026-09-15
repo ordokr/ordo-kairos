@@ -52,7 +52,9 @@ __all__ = [
     "StratumResult",
     "MaxStatisticResult",
     "max_statistic_test",
+    "weighted_share_ci",
 ]
+
 
 DEFAULT_ALPHA = 0.05
 DEFAULT_BOOTSTRAP = 2000
@@ -512,3 +514,42 @@ def superiority_test(
             deltas, cluster_ids, alpha=alpha, n_boot=n_boot, seed=seed
         )
     return cluster_bootstrap_test(deltas, cluster_ids, alpha=alpha, n_boot=n_boot, seed=seed)
+
+
+#: Below this many independent units a percentile bootstrap of a share is not worth reporting.
+MIN_SHARE_UNITS = 30
+
+
+def weighted_share_ci(flags: Sequence[bool], weights: Sequence[float], *,
+                      seed: int = 0, draws: int = 2000,
+                      alpha: float = DEFAULT_ALPHA) -> tuple[float, float] | None:
+    """Percentile interval for a **weighted share** ``sum(w where flag) / sum(w)``.
+
+    The resampled unit is the observation itself — a market, not a time block — because markets are
+    the independent units and there is no serial structure to preserve. Distinct from
+    :func:`kairos.microstructure.bootstrap_ci`, which blocks a time series.
+
+    Exists because Gate K.0 compares a measured share against another venue's measured share, and
+    two bare point estimates are not a comparison (``CORRECTIONS.md`` Pass 29).
+    """
+    if len(flags) != len(weights):
+        raise ValueError(f"{len(flags)} flags against {len(weights)} weights")
+    if any(w < 0.0 for w in weights):
+        raise ValueError("weights must be non-negative")
+    n = len(flags)
+    if n < MIN_SHARE_UNITS or sum(weights) <= 0.0:
+        return None
+    rng = random.Random(seed)
+    stats = []
+    for _ in range(draws):
+        num = den = 0.0
+        for _ in range(n):
+            i = rng.randrange(n)
+            den += weights[i]
+            if flags[i]:
+                num += weights[i]
+        stats.append(num / den if den > 0.0 else 0.0)
+    stats.sort()
+    lo = stats[max(0, int((alpha / 2.0) * draws) - 1)]
+    hi = stats[min(draws - 1, int((1.0 - alpha / 2.0) * draws))]
+    return lo, hi

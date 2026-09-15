@@ -2064,6 +2064,95 @@ Pass requires false-positive rate inside the exact binomial tail **and** power �
 
 ---
 
+## Class K — Maker economics on a second venue, and Gate K.0
+
+> **REGISTERED 2026-09-14, before `gatek.py` was written and before any Kalshi spread figure was
+> computed.** Runs: `python gatek.py`.
+>
+> **STATUS: RUN 2026-09-14 — NO VERDICT.** Kalshi's flow with room to quote is **26.6%,
+> 95% CI [18.4%, 39.1%]** on 1,124 eligible markets, against Polymarket's measured **22.6%**. The
+> interval straddles the comparator, so the venues are not distinguished. **Class K neither closes
+> nor licenses Gate K.** Full result in [`GATEK-RESULTS.md`](GATEK-RESULTS.md).
+>
+> Measured alongside: **73.4% of Kalshi flow is pinned at one tick** (Polymarket 77.4%), the median
+> spread is **5.00 ticks by market and 1.00 by flow**, and total eligible 24h flow across the whole
+> venue is **$319,300**.
+
+### Amendment 1 — the registered rule had no interval, recorded 2026-09-14 after the run
+
+The decision rule above compares a measured share against 22.6% with **no uncertainty on either
+side**. Run exactly as registered it returns NOT REFUTED at 26.6%; with a bootstrap interval it
+returns **NO VERDICT**. This is Pass 29 repeating — the defect that failed Gate M's null gate — in a
+registration written after that correction was recorded.
+
+The verdict now routes through the three-state discipline using
+`kairos.inference.weighted_share_ci`. Adding uncertainty that cuts against the hypothesis is
+permitted; the reverse would not be. See [`CORRECTIONS.md`](CORRECTIONS.md) Pass 36.
+
+### Why a second venue, and why only the cheap gate
+
+Classes M, M.0, M2, R and S are **Polymarket-only**. Gate M measured that a maker retains **3.9%** of
+the quoted half-spread there, 96.1% going to adverse selection. That is a fact about one venue's
+participant mix, not a law, so the question survives: **is a maker better paid on Kalshi?**
+
+`kairos/kalshi.py` is already built and verified against the live API (Gate C), and the estimators
+that matter — book walking, tick structure, flow weighting — are venue-agnostic. This is the cheapest
+remaining trading question in the repository, which is the only reason it is being asked.
+
+### The apparatus facts, probed before this registration and declared
+
+| fact | consequence |
+|---|---|
+| The market API exposes **no fee, maker, taker, rebate or reward field whatsoever** | **The Class M2 measurement has no Kalshi equivalent.** There is no published per-market schedule to read, so no rebate can be measured. Gate K.0 is about the **spread only** |
+| `kairos/kalshi.py` already records the fee schedule as **unverified** (429 from `kalshi.com`, 404 on the documentation paths, 2026-09-09) | Unchanged. No fee-dependent claim is licensed here |
+| `price_ranges[].step` gives tick size directly | Tick room is computable without assumption |
+| Three tick structures observed: `linear_cent` (1c), `tapered_deci_cent`, `deci_cent` (0.1c) | Spread must be expressed in **ticks**, never in cents, or the structures are not comparable |
+| `yes_bid_dollars` / `yes_ask_dollars` / `..._size_fp` / `volume_24h_fp` all present | Spread, depth and flow are all measurable |
+
+### The hypothesis, stated so it can fail
+
+> **H:** A larger share of Kalshi's traded flow sits in markets with room to quote inside the spread
+> than Polymarket's **22.6%**, so a maker there has more to capture before adverse selection is
+> measured at all.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **ticks** (spread / tick size), and **percent of 24h dollar flow**. Never cents — the venue runs three tick structures and cents are not comparable across them |
+| **Weighting** | **by 24h dollar flow, not by market count.** This is Pass 28.1 applied in advance: Gate M.0's registered condition passed on a median of markets while 77.4% of the *flow* failed it |
+| **Preconditions** | `status == "active"`; both sides quoted; longshot band (Pass 26.1) on the mid; `volume_24h_fp > 0` — a market with no flow has no maker economics to measure |
+| **Primary statistic** | share of 24h dollar flow in markets quoting **strictly more than one tick** |
+| **Comparator** | Polymarket's measured **22.6%** (Gate M.0 as corrected, `CORRECTIONS.md` Pass 28.1) |
+| Secondary | flow-weighted median spread in ticks, reported beside it |
+| Minimum sample | 300 markets clearing the preconditions, else **WITHHELD** |
+
+### Pre-committed expectation
+
+Kalshi's dominant structure is `linear_cent` — a **1c tick on a $1 contract**, which is coarse. A
+coarse tick forces quotes together, so the expectation is that Kalshi looks **worse** than Polymarket,
+with an even larger share of flow pinned at one tick. Recorded before the numbers, and recorded as
+an expectation of **refutation**: this gate is being run because it is cheap, not because it is
+promising.
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Flow share with tick room **≤ 22.6%** | **REFUTED.** Kalshi is no better than the venue already measured, and Class K closes. No adverse-selection measurement is licensed — there is nothing to select against |
+| Flow share **> 22.6%** | **NOT REFUTED on the cheap gate only.** Licenses Gate K, the realized-half-spread measurement, as a **new registration**. It does not license any claim about maker profitability on Kalshi |
+| Fewer than 300 markets clear preconditions | **WITHHELD** — apparatus, not evidence |
+
+### What this does not cover
+
+- **Fees and rebates.** Not exposed by the API and still unverified. No Class M2 equivalent exists.
+- **Adverse selection**, which is the term that killed Class M on Polymarket and is *not* measured
+  here. Tick room is a precondition for a maker edge, never evidence of one.
+- **Queue position**, inventory, and the whole of Gate 3.0's machinery.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**
