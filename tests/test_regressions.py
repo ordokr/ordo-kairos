@@ -1459,6 +1459,72 @@ class TestPass36AThresholdComparisonNeedsAnInterval(unittest.TestCase):
         self.assertEqual(gatek.quote(m), "no_flow")
 
 
+class TestPass37ATickIsNotAUnitComparableAcrossVenues(unittest.TestCase):
+    """Pass 37.1: Smarkets ladders in decimal odds, giving a probability tick of ~0.005-0.008
+    against the flat cent used by Polymarket and Kalshi. On Gate K.0's tick-room statistic that
+    reads 100.0% vs 26.6% -- a four-fold apparent win that is purely a tick-size artefact."""
+
+    def test_the_probability_tick_shrinks_as_the_odds_ladder_coarsens(self):
+        import gatesm
+
+        # Same odds increment, different price: the probability step is not a constant.
+        fine = gatesm.probability_tick(0.90)
+        mid = gatesm.probability_tick(0.50)
+        self.assertNotAlmostEqual(fine, mid, places=4,
+                                  msg="a price-dependent tick must not be treated as flat")
+        for p in (0.05, 0.25, 0.5, 0.75, 0.95):
+            self.assertLess(gatesm.probability_tick(p), 0.01,
+                            "the Smarkets tick is finer than a cent across the whole band")
+
+    def test_a_price_outside_the_unit_interval_has_no_tick(self):
+        import gatesm
+
+        for bad in (0.0, 1.0, -0.1, 1.5):
+            self.assertIsNone(gatesm.probability_tick(bad))
+
+    def test_the_primary_statistic_is_in_probability_units_not_ticks(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("COMPARATOR_HALF_SPREAD", src)
+        self.assertIn("PRIMARY units: PROBABILITY", src)
+        self.assertIn("NOT comparable to Kalshi", src,
+                      "the tick-room reading must carry its confound wherever it is printed")
+
+    def test_the_odds_ladder_is_monotone_and_covers_every_price(self):
+        import gatesm
+
+        steps = [gatesm.odds_increment(o) for o in (1.5, 2.5, 3.5, 5.0, 8.0, 15.0, 50.0)]
+        self.assertEqual(steps, sorted(steps), "a coarser ladder at longer odds, never finer")
+        self.assertEqual(gatesm.odds_increment(1000.0), 1.00)
+
+
+class TestPass37AMissingMappingMustWithholdNotDefault(unittest.TestCase):
+    """Pass 37.2: the contract->market mapping was built from `contract_selections`, which is null.
+    Every market then failed the flow precondition and the gate WITHHELD -- correctly. A runner
+    that defaulted missing volume to 'include anyway' would have called an unweighted result
+    flow-weighted (AXIOMS G5: an error and a measurement never share a counter)."""
+
+    def test_the_mapping_comes_from_the_contracts_endpoint(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("/contracts/", src)
+        self.assertIn('row["market_id"]', src)
+        self.assertNotIn("contract_selections\"]", src)
+
+    def test_a_fetch_failure_is_an_error_not_an_empty_result(self):
+        import gatesm
+
+        boom = urllib.error.URLError("refused")
+        with mock.patch("urllib.request.urlopen", side_effect=boom):
+            result = gatesm.get("/markets/1/quotes/")
+        self.assertIn("_error", result)
+        self.assertNotIn("quotes", result, "a failure must not look like an empty success")
+
+    def test_the_runner_withholds_below_its_sample_floor(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("MIN_MARKETS", src)
+        self.assertIn("WITHHELD", src)
+        self.assertIn("len(rows) < MIN_MARKETS", src)
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

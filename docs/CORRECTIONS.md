@@ -8,6 +8,65 @@ Newest pass at the top.
 
 ---
 
+## Pass 37 — Gate SM.0 run; a confound registered in advance prevented a four-fold false positive (2026-09-14)
+
+Class SM registered and run. Result in [`GATESM-RESULTS.md`](GATESM-RESULTS.md). **NO VERDICT** —
+flow-weighted median half-spread **0.00630** against a comparator of 0.00500, with the share of flow
+above the comparator at **62.4%, 95% CI [43.3%, 86.7%]**, straddling 50%.
+
+### 37.1 Reusing the previous gate's statistic would have manufactured the best number in the repository
+
+Gate K.0's statistic is *share of flow whose spread exceeds one tick*. Smarkets ladders in **decimal
+odds**, giving a probability-space tick of ~0.005–0.008 against the flat cent used by Polymarket and
+Kalshi. On that statistic:
+
+| venue | tick | Gate K.0 statistic |
+|---|---:|---:|
+| Polymarket | 0.0100 | 22.6% |
+| Kalshi | 0.0100 | 26.6% |
+| **Smarkets** | **~0.005–0.008** | **100.0%** |
+
+**Every eligible Smarkets market clears "more than one tick" because the tick is half the size.** A
+four-fold apparent improvement, entirely artefactual, and it would have been the most exciting figure
+this project has produced.
+
+The confound was named in the registration *before the run*, and the primary was moved onto the
+half-spread in **probability units**, which is comparable across all three venues. This is the first
+pass in this log where a defect was **prevented by the registration rather than caught after the
+fact** — the ladder was measured during apparatus probing, the consequence was reasoned through, and
+the statistic was chosen accordingly.
+
+### 37.2 A guessed field shape produced zero eligible markets, and the gate correctly refused
+
+The first run reported **0 eligible against a floor of 200** and WITHHELD. Cause: the contract →
+market mapping was built from `market["contract_selections"]`, which is **null** on Smarkets market
+objects. The mapping lives on `/v3/markets/{ids}/contracts/` as `{id, market_id}`.
+
+I guessed a field shape instead of verifying it, which is the same class of error as Pass 33.2's
+transcribed rate table. **What worked is that the gate refused**: with no volume resolvable, every
+market failed the flow precondition and the runner reported an apparatus failure rather than a
+measurement of zero (AXIOMS G5). A runner that defaulted missing volume to "include anyway" would
+have reported an unweighted result and called it flow-weighted.
+
+### 37.3 The implemented test is equivalent to the registered one, recorded so it is not read as drift
+
+The registration specified an interval on the **flow-weighted median** against 0.005. The runner
+intervals the **share of flow above 0.005** against 50%.
+
+These are the same test: a weighted median exceeds `x` exactly when the weighted share above `x`
+exceeds 50%. The share formulation bootstraps more stably than a quantile and reuses
+`weighted_share_ci` from Pass 36. Recorded because an equivalent-but-different-looking statistic is
+indistinguishable from a substituted one unless the equivalence is stated.
+
+### 37.4 The pre-committed expectation was wrong again, in the same harmless direction
+
+Registered: half-spread at or below 0.005, therefore refutation. Measured: 0.00630, with an interval
+too wide to establish it. Second gate running where the expectation was directionally wrong and the
+verdict was NO VERDICT. The expectations are not improving; the machinery that makes their wrongness
+legible is working.
+
+---
+
 ## Pass 36 — Gate K.0 run; a registered rule that compared two bare point estimates (2026-09-14)
 
 Class K registered and run. Result in [`GATEK-RESULTS.md`](GATEK-RESULTS.md). **NO VERDICT** —

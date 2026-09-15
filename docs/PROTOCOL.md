@@ -2153,6 +2153,108 @@ promising.
 
 ---
 
+## Class SM — A different counterparty population, and Gate SM.0
+
+> **REGISTERED 2026-09-14, before `gatesm.py` was written and before any Smarkets spread figure was
+> computed.** Runs: `python gatesm.py`.
+>
+> **STATUS: RUN 2026-09-14 — NO VERDICT.** Flow-weighted median half-spread **0.00630** against a
+> comparator of **0.00500**, with the share of flow above the comparator at **62.4%,
+> 95% CI [43.3%, 86.7%]** — straddling 50% on 278 eligible markets. **Class SM neither closes nor
+> licenses** the realized-half-spread gate. Full result in [`GATESM-RESULTS.md`](GATESM-RESULTS.md).
+>
+> **The registered confound paid for itself.** On Gate K.0's tick-room statistic Smarkets reads
+> **100.0%** against Kalshi's 26.6% — a four-fold apparent win that is entirely an artefact of a
+> finer tick. Naming it before the run, and moving the primary onto probability units, is the reason
+> this gate did not report the most exciting false positive in the repository
+> ([`CORRECTIONS.md`](CORRECTIONS.md) Pass 37.1).
+>
+> Also measured: **84% of quoted contracts have only one side**, and the first run **WITHHELD** at 0
+> eligible markets because a guessed field shape broke the volume mapping (Pass 37.2) — the refusal
+> behaved correctly rather than reporting an unweighted result as flow-weighted.
+
+### Why this is not another venue test
+
+Gate K.0 varied the venue and found the two indistinguishable. The variable that was never varied is
+the **counterparty**. Every class in this repository traded against political and crypto
+participants, and Gate M measured them taking **96.1%** of the half-spread. Smarkets is a UK betting
+exchange whose flow is largely **recreational sports bettors** — a different population, which is the
+only remaining variable with real leverage over that 96.1%.
+
+SX Bet was rejected as the candidate: it is crypto-native, so its population is the one Classes F and
+M have already measured, and testing it would vary the venue while holding the counterparty fixed —
+exactly the thing Gate K.0 already did.
+
+### Apparatus facts, probed before this registration and declared
+
+| fact | consequence |
+|---|---|
+| Books carry price **and quantity**; `/v3/markets/{ids}/volumes/` exposes traded volume | Flow weighting is possible, so Pass 28.1 can be honoured |
+| Volume units are **not documented** here | Irrelevant: a weighted **share** and a flow-weighted **median** are invariant to a common scale factor. No claim is made about absolute turnover |
+| Prices are integers per 10,000; the ladder is **decimal odds**, increment rising with odds | The probability-space tick is **price-dependent**, unlike Polymarket and Kalshi |
+| Ladder derived empirically from **283 distinct prices across 2,563 books**: 0.01 below odds 2.0, then 0.02 / 0.05 / 0.10 / 0.20 / 0.50 / 1.00 | Not assumed from documentation. Yields a tick of **~0.005–0.008** in probability terms — **finer than both venues already measured** |
+| No fee, commission or rebate field anywhere in the API | Same as Kalshi. Commission (published as a percentage of net winnings) is **not verified here** and no fee-dependent claim is licensed |
+| Many books are **single-level** | Depth-at-touch is measurable; queue modelling beyond the touch is not |
+
+### The confound this creates, named before it can be exploited
+
+**A finer tick makes "spread exceeds one tick" easier to satisfy for reasons that have nothing to do
+with the counterparty.** Gate K.0's statistic is therefore *not* comparable here, and using it would
+manufacture a difference out of a tick-size artefact.
+
+The primary statistic is accordingly the **quoted half-spread in probability units**, which is what
+the economics actually consume and what is directly comparable across all three venues. Tick room is
+demoted to a secondary reading and reported **with this confound restated**.
+
+### The hypothesis, stated so it can fail
+
+> **H:** Smarkets quotes a wider half-spread to its flow than the venues already measured, so there is
+> more for a maker to retain before adverse selection is measured at all.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **probability (= dollars per $1 contract)**. Never ticks for the primary — the three venues have different tick sizes and ticks are not comparable across them |
+| **Weighting** | **by traded volume, not by market count** (Pass 28.1). Scale-invariant, so undocumented volume units do not matter |
+| **Preconditions** | `state == "live"`; both sides quoted; longshot band (Pass 26.1) on the mid; positive volume — a market that traded nothing has no maker economics |
+| **Primary statistic** | flow-weighted **median quoted half-spread**, with a bootstrap interval over markets |
+| **Comparator** | **0.005** — Kalshi's measured flow-weighted median half-spread (Gate K.0: 1.00 tick of $0.01) and this repository's standing `CONSERVATIVE.half_spread` |
+| **Interval** | **required on the primary** (Pass 36). A threshold comparison without one is not a comparison |
+| Secondary | flow-weighted share with tick room, reported only alongside the tick-size confound |
+| Minimum sample | 200 markets clearing the preconditions, else **WITHHELD** |
+
+### Pre-committed expectation
+
+Betting exchanges compete hard on spread and Smarkets' ladder is finer than a cent, so the
+expectation is a half-spread **at or below 0.005** and therefore **refutation**. The counterparty may
+well be less informed, but a less informed counterparty quoted at a tighter spread leaves a maker no
+more to retain. Recorded before the numbers, and recorded as an expectation of refutation.
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| Interval on the median half-spread lies **at or below 0.005** | **REFUTED.** Smarkets offers a maker no more gross spread than venues already measured. The counterparty-population question is moot: retaining a larger share of nothing is nothing. Class SM closes |
+| Interval lies **entirely above 0.005** | **NOT REFUTED on the cheap gate only.** Licenses a realized-half-spread measurement as a **new registration**. Licenses no claim about profitability: Gate M found 96.1% of a wider spread going to adverse selection |
+| Interval **straddles** 0.005 | **NO VERDICT.** Three-state discipline (`validity.py`) |
+| Fewer than 200 markets clear preconditions | **WITHHELD** — apparatus, not evidence |
+
+### What this does not cover
+
+- **Commission.** Smarkets charges a percentage of *net winnings*, which is structurally unlike a
+  per-contract fee and is **hostile to a market maker in a way this gate does not model**. Not in the
+  API, not verified, not claimed.
+- **Mechanisms that tax consistent winners.** Betting exchanges are known to operate them. Unverified
+  and unmodelled; a hypothesis-level concern (grade U, `EVIDENCE.md`) recorded so it is not forgotten.
+- **Adverse selection** — the term the whole class is about — needs a trade time series and is **not**
+  measured by this gate. Gross spread is a precondition for a maker edge, never evidence of one.
+- **Operator eligibility.** A UK-licensed exchange is an operator precondition this repository does
+  not assert, exactly as with Binance in Gate F.
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**
