@@ -5,33 +5,77 @@ building — and the measured answer, which is no.**
 
 Not a trading bot. Not a framework. It never placed an order, and that was the point.
 
+> **Research artifact — not investment advice, not a solicitation, no warranty.** Every figure is a
+> dated observation of a named public venue, and this project is unaffiliated with all of them. See
+> [`DISCLAIMER.md`](DISCLAIMER.md).
+
+---
+
+## In plain English
+
+**What these markets are.** On sites like Polymarket and Kalshi you can buy a contract that pays
+$1 if some real-world event happens — an election result, an interest-rate decision, a basketball
+game — and nothing if it doesn't. The price sits between 0¢ and 100¢ and works like the crowd's
+estimate of the odds. Because the payouts are simple and the prices are public, a lot of people
+look at these markets and think: *a program could make money here.*
+
+**The question.** Could it? Precisely: can an ordinary person — no special speed, no inside
+information, an ordinary-sized account — make enough to be worth the money tied up doing it?
+
+**Why I built a measuring instrument instead of a bot.** The usual way to find out is to build the
+trading bot, run it for six months, and read the brokerage statement. That answer is accurate,
+expensive, and arrives far too late to act on. So I built the thing that measures the *ceiling*
+first — the most anyone could make, before the costs are even charged — and never placed a single
+trade. If the ceiling is too low, you have your answer for the price of some electricity.
+
+**What it does.** Seventeen experiments, called *gates*, across three betting venues plus crypto
+futures. Each one tests a single specific way you might make money: predicting events better than
+the crowd, spotting two prices that contradict each other, quoting prices to other traders,
+collecting the bonuses the venues pay out, and so on. Each reads live public data, charges every
+realistic cost honestly, and returns one of three answers: **it pays**, **it doesn't**, or
+**no verdict** — meaning the measurement was too weak to say either way. That third answer is the
+unusual one, and four gates returned it. **Zero dollars were risked.**
+
+**What I found: no.** Not one of the eleven strategies cleared the bar. Two facts killed most of
+them:
+
+1. **There is no room to compete.** Roughly three quarters of all the money traded sits in markets
+   where the price is already as tight as the venue permits. A newcomer literally cannot offer a
+   better one.
+2. **Where there is room, there is a queue.** Up to 6,284 orders are already waiting ahead of you.
+
+The one thing that *did* pay was not skill. It was a subsidy — money the venue chooses to hand out
+to attract traders, and can stop handing out on a Tuesday.
+
+**Why this might be useful to you.**
+
+- **If you were about to build something like this** — the numbers below are months of work and a
+  pile of capital you no longer have to spend to find out.
+- **If someone is selling you a trading bot** — this shows what one strategy looks like before and
+  after its costs are charged honestly. One estimator here reported a **`+4.71%` profit** where the
+  truth was a **`−0.67%` loss**. The gap was a single thing it forgot to look at.
+- **If you write code that produces numbers** — in any field, not just finance — the reusable part
+  is the machinery for not fooling yourself: null-world gating, three-state verdicts, and a
+  corrections log that fails the build.
+
+**The finding that travels furthest.** This project logged every mistake it made — 39 rounds of
+them. Every single one was in the *words around* the number: what was being counted, over what
+period, measured against what. **Not one was in the arithmetic.** The maths was always right. What
+it meant was what broke. That is probably true of your numbers too.
+
+---
+
 ### The hypothesis
+
+Stated formally, so that it could fail:
 
 > **A retail participant, with no latency advantage and no private information, can extract a
 > risk-adjusted return from event-contract markets that clears the cost of the capital it locks.**
 
-Stated so it can fail, and tested as **eleven separate hypothesis classes** — forecasting skill,
-structural arbitrage, cross-venue convergence, market making, subsidy capture, funding carry,
-counterparty selection, and new-listing timing — because "can you make money here" is not one
-question and fails for a different reason each time.
-
-### Why it exists
-
-The usual way to answer that question is to build the bot and read the brokerage statement. That
-answer is accurate, expensive, and arrives late. This is the cheap version: **measure the ceiling
-before spending anything**, and refuse to report a number the instrument cannot support.
-
-Seventeen gates, three event-contract venues plus crypto perpetuals, **zero dollars risked**.
-
-### What it is worth to you
-
-- **If you are about to build in this space** — the measured ceilings below are the months of work
-  and the capital you do not have to spend to find them out.
-- **If you are evaluating someone else's trading bot** — the exhibits here show what the same
-  strategy looks like before and after its costs are charged honestly. One estimator reported
-  `+4.71%` where the truth was `−0.67%`.
-- **If you write quantitative code of any kind** — the reusable part is the machinery, not the
-  finance: null-world gating, three-state verdicts, and a corrections log that fails the build.
+Tested as **eleven separate hypothesis classes** — forecasting skill, structural arbitrage,
+cross-venue convergence, market making, subsidy capture, funding carry, counterparty selection, and
+new-listing timing — because "can you make money here" is not one question, and it fails for a
+different reason each time.
 
 ---
 
@@ -46,9 +90,9 @@ Seventeen gates, three event-contract venues plus crypto perpetuals, **zero doll
 | **M2** | Maker rebates + holding rewards | **$139,450/yr** — but **77% is subsidy**, needs ~$100k, and holding rewards are a **net loss** against the capital they're paid on |
 | **R** | Liquidity-reward capture | sign flips on an accounting choice |
 | **F** | Delta-neutral funding carry | **REFUTED** — best **+2.85%**/yr against a 6% capital hurdle; every higher leverage was liquidated |
-| **S** | Does the subsidy persist? | **NO VERDICT** — one revision is not a cadence; annual withdrawal hazard bounded only at **≤94.5%** |
+| **S** | Does the subsidy persist? | **NO VERDICT** — one revision is not a cadence; the sample bounds the annual withdrawal hazard no tighter than **≤94.5%**, which is to say it is uninformative |
 | **K.0** | Is a maker better paid on Kalshi? | **NO VERDICT** — 26.6% of flow with room vs Polymarket's 22.6%, interval straddles |
-| **SM.0** | Is a *recreational* counterparty less toxic? (Smarkets) | **NO VERDICT** — half-spread 0.0063 vs 0.005, interval straddles |
+| **SM.0** | Is *recreational* order flow less adversely selected? (Smarkets) | **NO VERDICT** — half-spread 0.0063 vs 0.005, interval straddles |
 | **N.0** | Be the first maker in an empty book | **REFUTED ON CAPACITY** — new listings are 16× wider, 93.7% unquoted, 84× thinner queues, and carry **0.11%** of flow |
 
 **The two constraints that killed everything:** 73–77% of traded flow sits in markets quoted at a
@@ -58,7 +102,7 @@ single tick, where an entrant cannot improve the quote; and behind those quotes 
 **The one thing that paid was a subsidy, not an edge** — money the venue chooses to hand out, which
 it can stop handing out on a Tuesday.
 
-## Numbers worth stealing
+## Numbers worth taking
 
 If you are about to build something in this space, these are the figures that would have saved us
 the time:
@@ -67,7 +111,7 @@ the time:
 - **77.4%** (Polymarket) / **73.4%** (Kalshi) of dollar flow is pinned at one tick.
 - New listings carry **0.11%** of flow. The wide window is real and closes before anyone arrives.
 - Taker fee is `C × feeRate × p(1−p)`, `takerOnly: true` on **11 of 11** live schedules — makers pay
-  nothing, and the published rate table was **stale** the day we checked it.
+  nothing, and the published rate table **differed from the live schedule** on the day we checked.
 - Polymarket maker rebate ≈ **3.6×** the retained spread, and unlike liquidity rewards it does
   **not** dilute with competition: pool and share scale together.
 - Holding rewards pay **3.25%**/yr on capital. Charge that capital anything reasonable and it is a
@@ -126,9 +170,12 @@ that read **100%** on a venue purely because its tick was half the size.
 
 - It is **not** a claim that no edge exists — only that none of eleven classes cleared a floor at
   retail capital with no latency advantage, on the venues and dates measured.
-- Venue mechanics change. A published fee table went stale inside a day during this work.
+- Venue mechanics change. A published fee table and the live schedule differed inside a day during
+  this work — a fact about how fast these markets move, not an allegation against anyone.
 - No LLM was in any order path, and no order path exists.
 - **Nothing here ever traded.** No broker integration, no live capital, no executor.
+- It is **not** investment advice, a solicitation, or a suggestion that you open an account
+  anywhere. See [`DISCLAIMER.md`](DISCLAIMER.md).
 
 ## Reproduce
 
