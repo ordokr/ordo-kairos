@@ -1,0 +1,1746 @@
+"""Recorded corrections, re-expressed as tests that fail if the defect returns.
+
+``docs/CORRECTIONS.md`` is append-only prose and it did **not** prevent recurrence. Pass 4 recorded
+G0.2 — a power comparison run inside worlds where the best obtainable result was itself undetected —
+described the fix, and shipped it as a property of one class. Pass 9 then wrote a new runner and
+committed the same defect, announcing "DEAD" with every ceiling below the power floor.
+
+A correction that is only written down is a correction that will be made again (``AXIOMS`` G8). Each
+test below names the pass that recorded it, and encodes the *property* the correction established
+rather than the specific line that was wrong — a test pinned to the old line would pass a rewrite of
+the same mistake.
+"""
+
+from __future__ import annotations
+
+import json
+import unittest
+import urllib.error
+from pathlib import Path
+from unittest import mock
+
+from kairos import polymarket as pm
+from kairos.nullworld import POWER_FLOOR, inject_banded_signal, stratify_by_price
+from kairos.validity import assess
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class TestPass4G02VerdictNeedsAValidityPrecondition(unittest.TestCase):
+    """Pass 4 (G0.2), re-committed in Pass 9. The most expensive lesson in the project.
+
+    A comparison run inside units where nothing could have been detected measures the units, not the
+    instruments. Recorded in prose, fixed on one class, and then repeated by the next runner.
+    """
+
+    def test_no_verdict_when_every_unit_is_below_the_floor(self):
+        r = assess({"a": 0.19, "b": 0.38, "c": 0.25}, POWER_FLOOR)
+        self.assertFalse(r.may_conclude)
+        self.assertIn("NO VERDICT", r.refusal())
+
+    def test_a_dead_unit_may_not_hide_behind_a_healthy_one(self):
+        """Pass 9's second attempt: guarding on the BEST ceiling instead of per unit."""
+        r = assess({"healthy": 1.000, "dead": 0.062}, POWER_FLOOR)
+        self.assertTrue(r.may_conclude, "a healthy unit should still permit a verdict")
+        self.assertEqual([u.name for u in r.usable], ["healthy"])
+        self.assertEqual([u.name for u in r.excluded], ["dead"])
+
+    def test_the_refusal_is_empty_only_when_a_verdict_is_permitted(self):
+        self.assertEqual(assess({"ok": 0.9}, POWER_FLOOR).refusal(), "")
+        self.assertNotEqual(assess({"no": 0.1}, POWER_FLOOR).refusal(), "")
+
+    def test_a_unit_exactly_at_the_floor_is_usable(self):
+        self.assertTrue(assess({"edge": POWER_FLOOR}, POWER_FLOOR).may_conclude)
+
+
+class TestPass9SwallowedErrorsBecomeFacts(unittest.TestCase):
+    """Pass 9. Three quarters that return HTTP 500 were read as 'no markets resolved then'.
+
+    An early probe returned ``[]`` on any exception, so an upstream fault and a genuinely empty
+    result were the same value. The distinction between 'measured zero' and 'failed to measure' is
+    the whole of ``AXIOMS`` A6/G5.
+    """
+
+    def test_a_failed_window_reports_the_failure_rather_than_looking_empty(self):
+        with mock.patch.object(pm, "_get_retry",
+                               side_effect=urllib.error.HTTPError("u", 500, "e", None, None)), \
+             mock.patch.object(pm.time, "sleep", lambda s: None), \
+             mock.patch.object(pm, "cache_dir", lambda: Path(self.tmp)):
+            markets, failed = pm.fetch_window("2025-01-01", "2025-04-01")
+        self.assertEqual(markets, [])
+        self.assertTrue(failed, "a 500 must be reported as a failed offset, not as an empty window")
+
+    def test_a_genuinely_empty_window_reports_no_failures(self):
+        with mock.patch.object(pm, "_get_retry", return_value=[]), \
+             mock.patch.object(pm.time, "sleep", lambda s: None), \
+             mock.patch.object(pm, "cache_dir", lambda: Path(self.tmp)):
+            markets, failed = pm.fetch_window("2025-01-01", "2025-04-01")
+        self.assertEqual(markets, [])
+        self.assertEqual(failed, [], "measured-empty must be distinguishable from failed-to-measure")
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = self._td.name
+
+    def tearDown(self):
+        self._td.cleanup()
+
+
+class TestPass10FailedFetchesAreNeverCached(unittest.TestCase):
+    """Pass 10. ``fetch_history`` cached ``[]`` on any exception.
+
+    One transient network failure became a permanent, silent exclusion: the market counted as
+    ``no_history`` in every later run, forever, with nothing recording that a fetch had failed.
+    Measured exposure at the time: 618 of 14,005 cached histories empty, provenance unknown. A
+    re-probe of 60 found 0 recoverable, so nothing was contaminated — but the hazard was real.
+    """
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def _cache_files(self):
+        return list((self.tmp / "history").glob("*.json"))
+
+    def test_a_failed_fetch_writes_nothing(self):
+        with mock.patch.object(pm, "_get_retry",
+                               side_effect=urllib.error.URLError("down")), \
+             mock.patch.object(pm, "cache_dir", lambda: self.tmp):
+            self.assertEqual(pm.fetch_history("tok"), [])
+            self.assertEqual(self._cache_files(), [],
+                             "a failure must not be cached - the next run has to retry")
+
+    def test_a_successful_empty_fetch_is_cached_because_it_is_a_measurement(self):
+        with mock.patch.object(pm, "_get_retry", return_value={"history": []}), \
+             mock.patch.object(pm.time, "sleep", lambda s: None), \
+             mock.patch.object(pm, "cache_dir", lambda: self.tmp):
+            self.assertEqual(pm.fetch_history("tok"), [])
+        files = self._cache_files()
+        self.assertEqual(len(files), 1, "a measured-empty history IS a result and is cached")
+        self.assertEqual(json.loads(files[0].read_text(encoding="utf-8")), [])
+
+    def test_a_retry_that_recovers_is_cached_normally(self):
+        calls = {"n": 0}
+
+        def flaky(url, timeout=40):
+            calls["n"] += 1
+            if calls["n"] < 2:
+                raise urllib.error.HTTPError(url, 500, "e", None, None)
+            return {"history": [{"t": 1, "p": 0.5}]}
+
+        with mock.patch.object(pm, "_get", flaky), \
+             mock.patch.object(pm.time, "sleep", lambda s: None), \
+             mock.patch.object(pm, "cache_dir", lambda: self.tmp):
+            self.assertEqual(len(pm.fetch_history("tok")), 1)
+        self.assertEqual(len(self._cache_files()), 1)
+
+
+class TestPass9ControlsMustContainTheirHypothesis(unittest.TestCase):
+    """Pass 9. ``inject_banded_signal`` banded on ``pi``; every protocol sees only ``market``.
+
+    A control that does not contain the hypothesis it names cannot falsify it, and it fails quietly —
+    every number it produces looks plausible.
+    """
+
+    def test_the_bias_is_visible_in_the_variable_the_protocols_actually_see(self):
+        w = inject_banded_signal(n_events=500, contracts_per_event=2, bias=1.6,
+                                 band=(0.40, 0.60), seed=21)
+        assert w.truth is not None
+        labels = stratify_by_price(w.market)
+        leaked = [
+            lab for m, t, lab in zip(w.market, w.truth, labels)
+            if abs(m - t) > 1e-9 and lab != "mid"
+        ]
+        self.assertEqual(leaked, [], "bias outside the stated band is invisible to any protocol")
+
+
+class TestPass8ApparatusCeilingsAreNotDataCeilings(unittest.TestCase):
+    """Pass 8/9. ``--limit 900`` was read as the available sample; ``offset`` 2100 as the universe.
+
+    Both were argument or API ceilings mistaken for properties of the data. The constants that encode
+    those ceilings must stay explicit so the next reader sees a limit rather than a fact.
+    """
+
+    def test_the_pagination_ceiling_is_named_and_documented_as_an_api_limit(self):
+        self.assertEqual(pm.MAX_OFFSET, 2000)
+        doc = pm.__doc__ or ""
+        src = (ROOT / "kairos" / "polymarket.py").read_text(encoding="utf-8")
+        self.assertIn("26,143", src,
+                      "the windowed reach must stay recorded next to the offset ceiling, so the "
+                      "ceiling is never re-read as the size of the universe")
+
+    def test_windows_exist_as_the_documented_escape(self):
+        self.assertTrue(hasattr(pm, "fetch_window"))
+        self.assertTrue(hasattr(pm, "quarterly_windows"))
+
+
+class TestPass5CensusApparatusBugs(unittest.TestCase):
+    """Pass 5. Four apparatus bugs in one feasibility probe, each producing a confident wrong number.
+
+    The worst was a bare ``urllib`` request getting HTTP 403 from a host ``curl`` reached at 200 — a
+    false blocker that would have killed the whole Class A programme on an apparatus artefact.
+    """
+
+    def test_requests_carry_a_browser_user_agent(self):
+        """The 403: the CLOB host rejects urllib's default agent and accepts a browser one."""
+        ua = pm.HEADERS.get("User-Agent", "")
+        self.assertTrue(ua and "python" not in ua.lower(),
+                        f"default urllib agent gets 403 from this host; got {ua!r}")
+
+    def test_resolution_is_parsed_with_a_tolerance_not_exact_equality(self):
+        """Resolved markets report near-0/near-1 floats; `== 1.0` reported 0% resolved."""
+        self.assertGreater(pm.RESOLUTION_TOL, 0.0)
+        self.assertEqual(pm.resolution_of({"outcomePrices": '["0.99999", "0.00001"]'}), 1.0)
+        self.assertEqual(pm.resolution_of({"outcomePrices": '["0.00001", "0.99999"]'}), 0.0)
+        # and an unresolved market is still refused rather than rounded into a verdict
+        self.assertIsNone(pm.resolution_of({"outcomePrices": '["0.62", "0.38"]'}))
+
+    def test_horizon_comes_from_measured_history_not_a_nominal_end_date(self):
+        """Nominal endDate reported '367 days' for a market whose price history spans a week."""
+        day = 86400
+        hist = [{"t": 1_700_000_000 + i * day, "p": 0.5} for i in range(8)]
+        o = pm.admit(
+            {"id": "m", "outcomePrices": '["1","0"]', "endDate": "2099-01-01T00:00:00Z"},
+            hist, lead_hours=24.0,
+        )
+        self.assertIsNotNone(o)
+        self.assertLess(o.days_to_resolution, 10.0,
+                        "horizon must be measured from the price path, not read off endDate")
+
+
+class TestPass6SignificanceWithoutMateriality(unittest.TestCase):
+    """Pass 6. ``B_settle`` was declared a survivor at p=0.0005 on **0.024%** of the benchmark.
+
+    A deterministic monotone transform has almost no variance in its paired differences, so it can be
+    overwhelmingly significant and worth nothing. Every runner that renders a verdict carries a
+    materiality floor alongside its alpha.
+    """
+
+    def test_every_verdict_runner_declares_a_materiality_floor(self):
+        for script in ("gate1.py", "gate2.py", "replicate.py"):
+            src = (ROOT / script).read_text(encoding="utf-8")
+            self.assertIn("MIN_RELATIVE_GAIN", src,
+                          f"{script} renders a verdict without a materiality floor")
+
+    def test_the_floor_is_a_real_threshold_in_each_runner(self):
+        import importlib
+        for mod in ("gate1", "gate2", "replicate"):
+            m = importlib.import_module(mod)
+            self.assertGreater(getattr(m, "MIN_RELATIVE_GAIN"), 0.0, mod)
+
+
+class TestPass7AnchoringAndScale(unittest.TestCase):
+    """Pass 7. Two defects that changed every number without changing the headline.
+
+    Unstandardised features let ``maturity`` diverge to a log score of 4.82 against a 0.336
+    benchmark, and forecast-**error** correlation read 0.97 between models built on unrelated
+    features because market-anchored errors share the ``q - y`` term.
+    """
+
+    def test_forecaster_features_are_standardised_so_scale_cannot_dominate(self):
+        from kairos.forecasters import ForecasterSpec
+        from tests.test_forecasters import obs as make_obs
+
+        train = [make_obs(i, 0.4 + 0.001 * i, float(i % 2),
+                          age_days=float(i), n_before=float(i * 3)) for i in range(60)]
+        pred = ForecasterSpec("maturity", ("age_days", "n_before")).fit(train)
+        self.assertTrue(all(0.0 < pred(o) < 1.0 for o in train))
+
+    def test_both_correlation_diagnostics_exist_so_anchoring_is_visible(self):
+        from kairos import forecasters as f
+
+        self.assertTrue(hasattr(f, "error_correlations"))
+        self.assertTrue(hasattr(f, "tilt_correlations"),
+                        "tilt correlation is the diagnostic that survives market anchoring")
+
+
+class TestPass11CarryIsChargedOnceAndTheTwoModelsDoNotDrift(unittest.TestCase):
+    """Pass 11. The repo holds two carry models and they disagree at long horizons.
+
+    ``SettlementTerms`` discounts (``1/(1+wt)``); ``CostModel.carry`` is linear (``base*wt``). The gap
+    is 0.0034 at one year and **0.0129 at two** - larger than a plausible arbitrage, at exactly the
+    horizons where negRisk groups are most numerous. Gate B showed it is currently *masked* by
+    spread rather than absent, so it is pinned here instead of unified: a silent widening would
+    reach a scanner before anyone noticed.
+    """
+
+    def test_the_known_gap_between_the_two_carry_models_has_not_widened(self):
+        from kairos.baseline import SettlementTerms
+        from kairos.costs import CONSERVATIVE
+
+        for days, known in ((7.0, 0.0000), (90.0, 0.0003), (365.0, 0.0034), (730.0, 0.0129)):
+            implied = 1.0 - SettlementTerms(days_to_settlement=days).discount_factor
+            linear = CONSERVATIVE.carry(1.0, days)
+            gap = abs(implied - linear)
+            self.assertLessEqual(
+                gap, known + 5e-4,
+                f"the carry models diverged further at {days:.0f}d: {gap:.5f} vs a recorded "
+                f"{known:.4f}. Unify them or re-record the gap deliberately.",
+            )
+
+    def test_the_structural_scanner_charges_carry_exactly_once(self):
+        """AXIOMS C7: `effective_yes_cost` already includes carry, so the payoff stays nominal."""
+        from kairos.costs import CONSERVATIVE
+        from kairos.structural import fair_group, scan
+
+        g = fair_group(n_legs=4, days=730.0, seed=5)
+        expected = 1.0 - sum(
+            CONSERVATIVE.effective_yes_cost(leg.price, g.days_to_settlement) for leg in g.legs
+        )
+        self.assertAlmostEqual(scan(g).edge, expected, places=12)
+
+    def test_a_positive_control_must_not_be_defined_by_the_detector_it_tests(self):
+        """The circularity Gate B's first version shipped, and the fix."""
+        from kairos.structural import fair_group, obvious_arbitrage
+
+        g = obvious_arbitrage(fair_group(n_legs=5, days=30.0, seed=2), nominal_sum=0.70)
+        self.assertAlmostEqual(g.nominal_sum, 0.70, places=9,
+                               msg="the independent control is defined on quotes alone")
+
+
+class TestPass12LegSetCompletenessIsVerifiedNotAsserted(unittest.TestCase):
+    """Pass 12. Gate B measured that the whole Class B defence rests outside the scanner.
+
+    Real groups assembled through offset pagination were **49% truncated**, missing 60% of their
+    legs. A group missing three fifths of its legs presents as a spectacular arbitrage, so a scanner
+    trusting an asserted leg set is not slightly wrong, it is wrong about half the time.
+    """
+
+    def test_the_verified_scanner_refuses_a_bare_boolean(self):
+        """The old interface must fail loudly rather than be silently accepted."""
+        from kairos.structural import Leg, NegRiskGroup, scan_verified
+
+        g = NegRiskGroup("g", (Leg("a", 0.1, 500.0), Leg("b", 0.1, 500.0)), 30.0,
+                         legs_are_complete=True, outcomes_are_exhaustive=True)
+        with self.assertRaises(TypeError):
+            scan_verified(g, True)
+
+    def test_exhaustiveness_tolerance_scales_with_the_edge(self):
+        """Failure costs the stake, not the edge, so a thin edge cannot absorb the residual risk."""
+        from kairos.legset import break_even_failure_rate, residual_failure_bound
+
+        bound = residual_failure_bound()
+        # Derived from the bound, not pinned to an edge: the tolerable edge moves as the
+        # exhaustiveness sample grows (0.04 at 75 trials, 0.0059 at 512), and a hard-coded
+        # number would have to be edited each time - which is when a regression slips through.
+        too_thin = (bound * 0.5) * 0.95 / (1.0 - bound * 0.5)
+        thick = (min(bound * 5.0, 0.5)) * 0.95 / (1.0 - min(bound * 5.0, 0.5))
+        self.assertGreater(bound, break_even_failure_rate(too_thin, 0.95))
+        self.assertLess(bound, break_even_failure_rate(thick, 0.95))
+
+    def test_the_residual_bound_is_never_zero_however_many_trials_pass(self):
+        from kairos.legset import residual_failure_bound
+
+        self.assertGreater(residual_failure_bound(100000, 0), 0.0)
+
+    def test_neg_risk_request_id_is_never_read_as_a_field(self):
+        """Measured per-market: 2,896 ids across 2,896 markets. Grouping on it yields singletons.
+
+        Checked by parsing rather than by grepping. A text search matches the docstring that records
+        the finding, which is how the first version of this guard failed — asserting a property it
+        could not actually check (AXIOMS G7).
+        """
+        import ast
+
+        src = (ROOT / "kairos" / "legset.py").read_text(encoding="utf-8")
+        self.assertIn("negRiskRequestID", src,
+                      "the finding must stay recorded next to the code it warns about")
+
+        offenders = []
+        for module in ("legset.py", "structural.py"):
+            path = ROOT / "kairos" / module
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                # m.get("negRiskRequestID")
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "get" and node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and node.args[0].value == "negRiskRequestID"):
+                    offenders.append(f"{module}: .get(...)")
+                # m["negRiskRequestID"]
+                if (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+                        and node.slice.value == "negRiskRequestID"):
+                    offenders.append(f"{module}: subscript")
+        self.assertEqual(offenders, [],
+                         f"negRiskRequestID read as a field: {offenders}. It is per-market.")
+
+
+class TestPass13ExhaustivenessConstantsAreMeasuredNotTyped(unittest.TestCase):
+    """Pass 13. The bound decides which trades are allowed, so it must not be a hand-typed number.
+
+    Extending the sample 75 -> 512 moved the tradeable floor from ~5% to ~1%. That makes
+    ``EXHAUSTIVENESS_TRIALS`` a load-bearing trading parameter: a value typed in by hand is a rule
+    with no evidence behind it.
+    """
+
+    def test_the_constants_have_a_reproducible_generator(self):
+        script = ROOT / "exhaustiveness.py"
+        self.assertTrue(script.is_file(), "the measurement must be re-runnable, not an ad-hoc probe")
+        src = (ROOT / "kairos" / "legset.py").read_text(encoding="utf-8")
+        self.assertIn("exhaustiveness.py", src,
+                      "legset must name the script that generates its constants")
+
+    def test_the_generator_checks_the_survivorship_channel(self):
+        """A voided group would be dropped by a clean-resolution filter, hiding real failures."""
+        src = (ROOT / "exhaustiveness.py").read_text(encoding="utf-8")
+        self.assertIn("voided", src)
+
+    def test_the_bound_never_reaches_zero_however_large_the_sample(self):
+        from kairos.legset import residual_failure_bound
+
+        self.assertGreater(residual_failure_bound(10**7, 0), 0.0)
+
+    def test_tolerance_tests_derive_their_edges_from_the_bound(self):
+        """Guards the fix itself: a hard-coded edge silently rots as the sample grows."""
+        src = (ROOT / "tests" / "test_legset.py").read_text(encoding="utf-8")
+        self.assertIn("_edges_around_the_bound", src)
+        self.assertIn("residual_failure_bound()", src)
+
+    def test_the_recorded_sample_only_ever_grows(self):
+        from kairos.legset import EXHAUSTIVENESS_FAILURES, EXHAUSTIVENESS_TRIALS
+
+        self.assertGreaterEqual(EXHAUSTIVENESS_TRIALS, 512)
+        self.assertEqual(EXHAUSTIVENESS_FAILURES, 0,
+                         "a failure would widen the bound - re-derive it, do not ignore it")
+
+
+class TestPass14BookApparatus(unittest.TestCase):
+    """Pass 14. Three apparatus facts, each of which alone produces a confidently wrong price."""
+
+    def test_the_book_is_normalised_best_first(self):
+        """Live CLOB sorts both sides worst-first; asks[0] was 0.999 on every market probed."""
+        from kairos.book import parse_book
+
+        b = parse_book({"asks": [{"price": "0.999", "size": "1"}, {"price": "0.40", "size": "1"}],
+                        "bids": [{"price": "0.10", "size": "1"}, {"price": "0.30", "size": "1"}]})
+        self.assertEqual(b.best_ask, 0.40)
+        self.assertEqual(b.best_bid, 0.30)
+
+    def test_a_crossed_price_is_not_charged_spread_twice(self):
+        """AXIOMS C7 in its Class B form."""
+        from kairos.costs import CONSERVATIVE
+
+        vwap = 0.48
+        self.assertLess(CONSERVATIVE.effective_yes_cost_at(vwap, 30.0),
+                        CONSERVATIVE.effective_yes_cost(vwap, 30.0))
+
+    def test_book_failures_carry_a_reason_rather_than_a_bare_none(self):
+        """The bucket-merge that read as 'the venue is illiquid' when 0 groups were thin."""
+        import inspect
+
+        from kairos.book import fetch_book_result
+
+        sig = inspect.signature(fetch_book_result)
+        self.assertIn("token_id", sig.parameters)
+        src = inspect.getsource(fetch_book_result)
+        for reason in ("http_", "network", "unparseable"):
+            self.assertIn(reason, src, "each failure mode must be nameable, not merged")
+
+    def test_the_scanner_separates_thin_from_unfetchable(self):
+        src = (ROOT / "scanb.py").read_text(encoding="utf-8")
+        self.assertIn("book_too_thin_at_size", src)
+        self.assertIn("unfetchable", src)
+        self.assertIn("group_has_untradeable_legs", src)
+
+    def test_the_untradeable_predictor_is_active_not_the_obvious_flags(self):
+        """enableOrderBook and acceptingOrders were True on every 404 leg; only `active` tracked."""
+        src = (ROOT / "scanb.py").read_text(encoding="utf-8")
+        self.assertIn('m.get("active")', src,
+                      "the scanner must filter on `active`, the only measured predictor")
+
+
+class TestPass15OpenItemsStayClosed(unittest.TestCase):
+    """Pass 15. A status is a claim; an unmaintained one is a false claim (G8, one level up)."""
+
+    def test_the_withdrawn_manipulation_threshold_cannot_return(self):
+        from kairos.gate import GateConfig
+
+        self.assertFalse(hasattr(GateConfig(), "min_manipulation_cost_multiple"))
+
+    def test_a_price_settled_market_needs_a_written_analysis_not_a_number(self):
+        from kairos.costs import CONSERVATIVE
+        from kairos.gate import GateConfig, MarketSnapshot, evaluate
+
+        m = MarketSnapshot(market_id="m", mid=0.5, days_to_resolution=30.0,
+                           depth_contracts=10_000.0, settles_on_tradeable_price=True,
+                           settlement_manipulation_cost=1e9)
+        d = evaluate(0.9, m, costs=CONSERVATIVE, config=GateConfig(),
+                     member_forecasts=(0.9, 0.9, 0.9), intended_contracts=10.0)
+        self.assertIn("resolution_manipulability", [c.name for c in d.failures])
+
+    def test_the_unrelated_q_star_in_legset_was_not_swept_up_by_the_rename(self):
+        """legset's q* is the break-even failure rate. A mass rename would have corrupted it."""
+        src = (ROOT / "kairos" / "legset.py").read_text(encoding="utf-8")
+        self.assertIn("q* = edge / (edge + stake)", src)
+
+    def test_no_live_module_still_calls_the_benchmark_q_star(self):
+        for mod in ("sizing.py", "__init__.py"):
+            src = (ROOT / "kairos" / mod).read_text(encoding="utf-8")
+            self.assertNotIn("(p, q*)", src, f"{mod} still uses the withdrawn symbol")
+
+    def test_a_rejected_candidate_protocol_does_not_gate_the_incumbent(self):
+        """Gate 0b rejected stratification; it must not veto the verdict on the pipeline in use."""
+        from kairos.nullworld import WorldReport
+
+        strat = WorldReport("signal_strong", True, "strat_maxt", 10, 2)
+        kairos = WorldReport("signal_strong", True, "kairos", 10, 7)
+        self.assertFalse(strat.is_gate_condition, "a rejected challenger must be an exhibit")
+        self.assertTrue(kairos.is_gate_condition)
+
+    def test_discovery_sweeps_both_ends_of_the_volume_distribution(self):
+        """A head-only null is weakest exactly where the literature expects an edge."""
+        src = (ROOT / "scanb.py").read_text(encoding="utf-8")
+        self.assertIn('for ascending in ("false", "true")', src)
+
+
+class TestPass16SilentOpenItems(unittest.TestCase):
+    """Pass 16. The open items that do not announce themselves: no test, no caller, no status."""
+
+    def test_every_core_module_has_a_dedicated_test_file_or_a_named_home(self):
+        """`costs.py` was used by six suites as a fixture and checked by none of them."""
+        homes = {"validity.py": "test_regressions.py"}  # tested, deliberately not same-named
+        missing = []
+        for mod in (ROOT / "kairos").glob("*.py"):
+            if mod.name == "__init__.py":
+                continue
+            if (ROOT / "tests" / f"test_{mod.stem}.py").exists():
+                continue
+            if mod.name in homes and (ROOT / "tests" / homes[mod.name]).exists():
+                continue
+            missing.append(mod.name)
+        self.assertEqual(missing, [], f"core modules with no test home: {missing}")
+
+    def test_the_documented_no_trade_band_is_pinned(self):
+        from kairos.costs import CONSERVATIVE
+
+        self.assertAlmostEqual(CONSERVATIVE.round_trip_drag(0.50, 30.0), 0.050, places=3)
+
+    def test_the_deleted_orphans_stay_deleted(self):
+        import kairos.polymarket as pm
+
+        for gone in ("AdapterError", "fetch_resolved_markets_windowed"):
+            self.assertFalse(hasattr(pm, gone), f"{gone} was deleted as unconsumed (E1)")
+
+    def test_the_scorer_that_only_looked_dead_is_still_wired(self):
+        """`brier_score_pointwise` was flagged as an orphan and is not one."""
+        from kairos.score import brier_score, brier_score_pointwise
+
+        self.assertAlmostEqual(brier_score([0.5, 0.5], [1.0, 0.0]), 0.25, places=9)
+        self.assertEqual(len(brier_score_pointwise([0.5, 0.5], [1.0, 0.0])), 2)
+
+    def test_every_gate_declares_a_status(self):
+        """A gate with no status cannot be told apart from one that was forgotten."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        blocks = proto.split("\n## Gate ")[1:]
+        unmarked = [b.splitlines()[0] for b in blocks if "STATUS" not in b.split("\n## ")[0]]
+        self.assertEqual(unmarked, [], f"gates with no STATUS line: {unmarked}")
+
+
+class TestPass17GateCRegistration(unittest.TestCase):
+    """Pass 17. Gate C is registered before its data exists; the registration must stay honest."""
+
+    def test_gate_c_is_registered_with_a_status(self):
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("## Gate C", proto)
+        self.assertIn("STATUS", proto.split("## Gate C")[1][:400])
+
+    def test_the_kill_rule_is_registered_and_terminal(self):
+        """A stopping condition that says 'try another venue' is not a stopping condition."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("200 verified pairs", proto)
+        self.assertIn("programme ends", proto)
+
+    def test_the_semantic_null_worlds_are_all_named(self):
+        """Seven kinds of near-miss pair, each of which the matcher must refuse.
+
+        Searches the document rather than slicing a section. The first version sliced on
+        ``"## Gate C"``, which matches **twice** — the h2 heading and the h3
+        ``### Gate C — the semantic-identity null gate`` that contains it as a substring — so
+        ``[1]`` returned the text *between* the two headings and the null worlds appeared missing
+        from a registration that contained them. A brittle locator reporting a real document as
+        incomplete is the same class of error as a probe reporting a live endpoint as dead (G2).
+        """
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        for world in ("Horizon mismatch", "Threshold mismatch", "Scope mismatch",
+                      "Resolution-source mismatch", "Settlement-time mismatch",
+                      "Negation pair", "Random pairing"):
+            self.assertIn(world, proto, f"null world {world!r} missing from the registration")
+
+    def test_divergence_risk_reuses_the_measured_bound_not_a_flag(self):
+        from kairos.legset import break_even_failure_rate, residual_failure_bound
+
+        self.assertGreater(residual_failure_bound(), 0.0)
+        self.assertAlmostEqual(break_even_failure_rate(0.05, 0.95), 0.05, places=9)
+
+    def test_the_protocol_status_and_the_runner_on_disk_agree(self):
+        """The protocol's claim about what has run must match what exists. Both directions.
+
+        This guard has now gone inert **twice** by being written as a one-way conditional. Version
+        one asserted ``gatec.py`` did not exist while Gate C was REGISTERED, NOT RUN; building the
+        gate made its precondition false and it early-returned forever. Version two said the same
+        thing about ``scanc.py`` and died the same way one step later. A guard whose precondition is
+        the thing it is guarding *against* stops applying at exactly the moment it starts mattering.
+
+        So it is stated as an invariant with no escape branch: exactly one status marker is present,
+        and the runner exists if and only if the status says it ran. Whichever way the protocol
+        moves, one half of this assertion is live (AXIOMS G8).
+        """
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        not_run = "MEASUREMENT NOT RUN" in proto
+        run = "MEASUREMENT RUN" in proto
+        self.assertNotEqual(not_run, run,
+                            "the protocol must say exactly one of MEASUREMENT RUN / MEASUREMENT "
+                            "NOT RUN; both or neither means the status cannot be read")
+        self.assertEqual((ROOT / "scanc.py").exists(), run,
+                         "the protocol's status and the runner on disk disagree")
+
+
+class TestPass18GateCRun(unittest.TestCase):
+    """Pass 18. Gate C ran, passed, and falsified its own registration twice."""
+
+    def test_the_registration_records_that_its_evidence_list_was_incomplete(self):
+        """The five frozen fields could not refuse a null world the same document registered."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("all six must agree", proto)
+        self.assertIn("Amended 2026-09-09 from five to six", proto)
+
+    def test_the_false_pair_that_the_pass_column_could_not_see_stays_fixed(self):
+        """Two different year-like strikes were declared the same event (CORRECTIONS Pass 18.2)."""
+        from kairos.identity import RawMarket, same_event
+
+        rules = ("Settles YES if gold closes above X. Source: the primary spot index. "
+                 "Determination at 16:00 UTC on 2027-03-31.")
+        left = RawMarket("kalshi", "A", "gold closes above 2000 - Mar 31, 2027", rules,
+                         "2027-03-31T16:00:00Z")
+        right = RawMarket("kalshi", "B", "gold closes above 2050 - Mar 31, 2027", rules,
+                          "2027-03-31T16:00:00Z")
+        verdict = same_event(left, right)
+        self.assertFalse(verdict.paired, "2000 and 2050 are different strikes")
+        self.assertIn("threshold_differs", verdict.refusals)
+
+    def test_the_control_carries_a_year_like_strike(self):
+        """The world could not have caught 18.2 because the control never carried one (G6)."""
+        from kairos.identity import _THRESHOLDS
+
+        self.assertIn(2000.0, _THRESHOLDS,
+                      "a strike inside 1900-2099 must be reachable in every world, not only as "
+                      "arithmetic inside threshold_mismatch")
+
+    def test_the_gate_counts_refusal_reasons_not_only_refusals(self):
+        """G10. The reason column is what exposed 18.2; a rate column could not."""
+        source = (ROOT / "gatec.py").read_text(encoding="utf-8")
+        self.assertIn("refusal_counts", source)
+        self.assertIn("principal refusal", source,
+                      "the gate's table must report WHY each world was refused (AXIOMS G10)")
+
+    def test_every_comparison_in_the_matcher_is_load_bearing(self):
+        """A gate no broken instrument would fail is decoration. Kill-tests live in
+        tests/test_identity.py; this asserts the matrix has not been quietly emptied."""
+        from tests.test_identity import NECESSITY
+
+        self.assertEqual(len(NECESSITY), 7)
+        worlds = {world for _, world in NECESSITY}
+        self.assertEqual(len(worlds), 7, "each null world must justify a distinct check")
+
+
+class TestPass19CrossVenueMeasurement(unittest.TestCase):
+    """Pass 19. The measurement ran; all three withdrawn claims were apparatus, none inference."""
+
+    def test_unavailable_evidence_is_not_reported_as_disagreement(self):
+        """19.1. A reason that fires on every pair drives the sole-blocker column to zero."""
+        from kairos.identity import ParsedIdentity, compare_identities
+
+        blank = ParsedIdentity(frozenset({"a"}), None, "2027-01-01T00:00Z", frozenset(), False,
+                               ("resolution_source",))
+        known = ParsedIdentity(frozenset({"a"}), None, "2027-01-01T00:00Z",
+                               frozenset({"x"}), False, ())
+        refusals = compare_identities(blank, known).refusals
+        self.assertIn("unrecoverable:left:resolution_source", refusals)
+        self.assertNotIn("resolution_source_differs", refusals)
+
+    def test_a_nominal_day_boundary_is_not_a_determination_instant(self):
+        """19.2. Polymarket's endDate was being fed to a settlement-instant check."""
+        from kairos.crossvenue import polymarket_descriptor
+
+        d = polymarket_descriptor({
+            "id": "1", "question": "Will X happen?", "description": "Rules.",
+            "endDate": "2027-01-01T00:00:00Z", "clobTokenIds": '["y", "n"]',
+        })
+        self.assertIn("settlement_time", d.identity.missing)
+
+    def test_the_kalshi_book_is_mirrored_not_read_directly(self):
+        """The apparatus fact that would have produced a false positive on every pair."""
+        from kairos.kalshi import books_from_orderbook
+
+        yes, _ = books_from_orderbook({"orderbook_fp": {
+            "yes_dollars": [["0.4000", "50.00"]], "no_dollars": [["0.5500", "30.00"]]}})
+        self.assertAlmostEqual(yes.best_ask, 0.45, places=9)
+        self.assertAlmostEqual(yes.best_bid, 0.40, places=9)
+        self.assertGreater(yes.best_ask, yes.best_bid, "reading yes_dollars as asks inverts the buy")
+
+    def test_the_provisional_pairs_are_counted_and_not_priced(self):
+        """Knowing the answer before the gate is how Look 1 spent its alpha."""
+        source = (ROOT / "scanc.py").read_text(encoding="utf-8")
+        self.assertIn("provisional", source)
+        self.assertIn("left unpriced", source)
+        priced = source.split("[4/4]")[1] if "[4/4]" in source else source
+        self.assertNotIn("for p, k, kinds in provisional", priced.split("RESULT")[0],
+                         "provisional pairs must not enter the pricing loop")
+
+    def test_the_structural_zero_is_labelled_as_structural(self):
+        """AXIOMS G12: a count fixed by an apparatus limit is not a measurement."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("The zero is structural", proto)
+        self.assertIn("scanc.py", (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8"))
+
+
+class TestPass20GateC2Extractor(unittest.TestCase):
+    """Pass 20. The instrument was built, and it falsified the diagnosis that motivated it."""
+
+    def test_the_extractor_reconstructs_a_real_markets_own_timestamp(self):
+        """Polymarket's prose and its `endDate` are two independent sources for one instant."""
+        from kairos.identity import extract_prose_instant
+
+        instant, modality = extract_prose_instant(
+            "...recognizes the Republic of Somaliland as a sovereign state by December 31, 2026, "
+            "11:59 PM ET.")
+        self.assertEqual(instant, "2027-01-01T04:59Z")
+        self.assertEqual(modality, "deadline")
+
+    def test_modality_is_evidence_not_a_footnote(self):
+        """A barrier and a digital carry the same timestamp and different payoffs."""
+        from kairos.identity import ParsedIdentity, compare_identities
+
+        def ident(modality):
+            return ParsedIdentity(frozenset({"a"}), None, "2027-01-01T00:00Z", frozenset({"s"}),
+                                  False, (), modality=modality)
+
+        self.assertIn("modality_differs",
+                      compare_identities(ident("deadline"), ident("instant")).refusals)
+        self.assertTrue(compare_identities(ident("deadline"), ident("deadline")).paired)
+
+    def test_the_two_ambiguous_hours_a_year_are_refused(self):
+        """An hour of error makes a 12pm market look like a 1pm one (AXIOMS A6)."""
+        from kairos.identity import extract_prose_instant
+
+        self.assertEqual(extract_prose_instant("... on March 14, 2027 at 2:30 AM ET."), (None, None))
+        self.assertEqual(extract_prose_instant("... on November 7, 2027 at 1:30 AM ET."),
+                         (None, None))
+
+    def test_the_withdrawn_pass_19_claim_is_not_still_asserted(self):
+        """20.1: "a missing instrument, not a missing market" was refuted by building it."""
+        for doc in ("PROTOCOL.md", "CORRECTIONS.md"):
+            text = (ROOT / "docs" / doc).read_text(encoding="utf-8")
+            for para in text.split("\n\n"):
+                if "binding constraint is a missing" in para:
+                    self.assertTrue(
+                        "refuted" in para or "Withdrawn" in para or "wrong" in para,
+                        f"{doc} still asserts the withdrawn Pass-19 diagnosis unqualified")
+
+    def test_the_gate_covers_the_extractor_it_licenses(self):
+        """An instrument used by the measurement must have a null world exercising it (A7)."""
+        from kairos.identity import NULL_WORLDS
+
+        names = {name for name, _ in NULL_WORLDS}
+        self.assertIn("modality_mismatch", names)
+        self.assertIn("prose_contradiction", names)
+
+
+class TestPass21VenueBranchExhausted(unittest.TestCase):
+    """Pass 21. The stopping rule's next move was taken and it terminated."""
+
+    def test_the_three_requirements_are_stated_where_a_venue_is_rejected(self):
+        """A rejected venue must stay rejected for a stated reason, not a vague one (C9a)."""
+        source = (ROOT / "venues.py").read_text(encoding="utf-8")
+        for requirement in ("Resolution rules", "determination instant", "Order-book depth"):
+            self.assertIn(requirement, source)
+
+    def test_the_probe_precedes_the_adapter(self):
+        """Building an adapter and then finding the venue publishes no rules is the same error as
+        scanning before gating."""
+        source = (ROOT / "venues.py").read_text(encoding="utf-8")
+        self.assertIn("feasibility probe before an adapter", source)
+        for gone in ("predictit_descriptor", "smarkets_descriptor"):
+            self.assertNotIn(gone, (ROOT / "kairos" / "crossvenue.py").read_text(encoding="utf-8"),
+                             "no adapter may be built for a venue the probe rejected")
+
+    def test_untestable_is_not_recorded_as_rejected(self):
+        """A1. 'Cannot be measured' and 'measured and found absent' are different verdicts.
+
+        This guard originally pinned Pass 21's NOT TESTABLE verdict. **Pass 22 withdrew that
+        verdict** — it rested on a matcher whose recall had never been measured and turned out to be
+        ~0 — so the guard now pins the distinction itself rather than the conclusion that used it.
+        A guard tied to a specific verdict dies with the verdict; one tied to the principle does not.
+        """
+        log = (ROOT / "docs" / "CORRECTIONS.md").read_text(encoding="utf-8")
+        self.assertIn("NOT TESTABLE", log)
+        self.assertIn("has not been tried and found wanting", log)
+
+    def test_the_deadlock_is_recorded_rather_than_resolved(self):
+        """The remaining step needs the permission that passing the protocol was meant to earn."""
+        log = (ROOT / "docs" / "CORRECTIONS.md").read_text(encoding="utf-8")
+        self.assertIn("F3", log)
+        self.assertIn("deadlock", log.lower())
+
+
+class TestPass22RecallIsTheBindingConstraint(unittest.TestCase):
+    """Pass 22. Recall measured at 0/26; three passes of conclusions withdrawn."""
+
+    def test_a_gate_must_not_claim_power_it_measured_against_its_own_dialect(self):
+        """G14. Precision transfers out of a null world; power does not."""
+        axioms = (ROOT / "docs" / "AXIOMS.md").read_text(encoding="utf-8")
+        self.assertIn("G14", axioms)
+        self.assertIn("Precision transfers out of a null world", axioms)
+
+    def test_the_recall_probe_selects_candidates_the_matcher_cannot_influence(self):
+        """A gold set screened by the instrument under test measures the instrument against
+        itself - which is exactly the defect it exists to detect."""
+        source = (ROOT / "recall.py").read_text(encoding="utf-8")
+        self.assertIn("took no part in selection", source.lower())
+        selection = source.split("scored.sort")[0]
+        self.assertNotIn("verdict.paired", selection,
+                         "candidate selection must not consult the matcher under test")
+
+    def test_the_withdrawn_claims_are_not_still_asserted(self):
+        """22.1-22.3: 'few fungible events', 'NOT TESTABLE', and the F3 'deadlock'."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("withdrew the conclusion drawn here", proto)
+        self.assertIn("was a misreading", proto)
+        for para in proto.split(chr(10) + chr(10)):
+            if "very few mutually fungible events" in para:
+                self.assertIn("withdrew", para,
+                              "PROTOCOL still asserts the falsified claim unqualified")
+
+    def test_f3_forbids_execution_not_reading(self):
+        """The constraint was quoted for three passes without being read."""
+        axioms = (ROOT / "docs" / "AXIOMS.md").read_text(encoding="utf-8")
+        f3 = axioms.split("**F3.")[1].split("**F")[0]
+        for forbidden in ("broker integration", "live capital", "production executor"):
+            self.assertIn(forbidden, f3)
+        self.assertNotIn("market data", f3, "F3 says nothing about reading market data")
+
+
+class TestPass23AlignmentTable(unittest.TestCase):
+    """Pass 23. The recall floor, the adjudicated table, and the first completed measurement."""
+
+    def _table(self):
+        import json
+        return json.loads((ROOT / "docs" / "ALIGNMENT.json").read_text(encoding="utf-8"))
+
+    def test_the_recall_floor_is_the_repos_existing_constant(self):
+        """A floor invented after seeing the instrument score zero is a floor chosen to clear."""
+        proto = (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+        self.assertIn("RECALL_FLOOR = POWER_FLOOR = 0.50", proto)
+
+    def test_every_surfaced_candidate_is_adjudicated(self):
+        """A pool with unlabelled members lets the adjudicator skip the awkward ones."""
+        table = self._table()
+        labels = {p["label"] for p in table["pairs"]}
+        self.assertTrue(labels <= {"IDENTICAL", "FUNGIBLE-WITH-BASIS", "DISTINCT"})
+        self.assertTrue(all(p.get("reason") for p in table["pairs"]),
+                        "every label must carry its reason - an unexplained label is an assertion")
+
+    def test_no_pair_is_certified_riskless(self):
+        """IDENTICAL is empty: resolution criteria could not be verified equal from published text."""
+        table = self._table()
+        self.assertEqual(table["identical_count"], 0)
+        self.assertEqual([p for p in table["pairs"] if p["label"] == "IDENTICAL"], [])
+
+    def test_the_table_was_adjudicated_before_prices(self):
+        """The one protection that matters, and it is a property of the program, not a promise."""
+        source = (ROOT / "align.py").read_text(encoding="utf-8")
+        self.assertIn("Fetches no prices", source)
+        for pricing in ("cost_to_buy", "fetch_book_result", "best_direction"):
+            self.assertNotIn(f"from kairos.book import {pricing}", source)
+        self.assertIn("no price data fetched", self._table()["adjudicated"])
+
+    def test_the_measurement_reports_fee_sensitivity(self):
+        """A negative median must say whether its sign turns on an unverified fee schedule."""
+        source = (ROOT / "scanc.py").read_text(encoding="utf-8")
+        self.assertIn("FEE SENSITIVITY", source)
+        self.assertIn("zero_fee", source)
+
+
+class TestPass24AlignmentGuards(unittest.TestCase):
+    """Pass 24. Group labels produced 40% false pairs; the guards are what makes the table usable."""
+
+    def test_subject_containment_rejects_a_different_organisation(self):
+        """BRICS paired with OPEC and claimed a +0.169 edge."""
+        import adjudicate
+
+        self.assertTrue(adjudicate.tokens("Will another country leave OPEC in 2026?")
+                        - adjudicate.tokens("Will a country leave BRICS in 2026?"),
+                        "the Kalshi event must carry a token the Polymarket title lacks")
+
+    def test_subject_containment_rejects_a_different_person(self):
+        """Trump paired with Gianni Infantino and claimed a +0.106 edge."""
+        import adjudicate
+
+        absent = (adjudicate.tokens("Gianni Infantino out as President of FIFA in 2026")
+                  - adjudicate.tokens("Trump out as President by September 30?"))
+        self.assertIn("infantino", absent)
+
+    def test_a_group_whose_outcomes_cannot_be_checked_is_refused_whole(self):
+        """'R Senate, D House' against 'R-House, D-Senate' is an inversion in single letters."""
+        import adjudicate
+
+        self.assertIn("2026 Midterms: Congress Balance of Power?", adjudicate.UNVERIFIABLE)
+        self.assertEqual(adjudicate.tokens("R Senate, D House"),
+                         adjudicate.tokens("R-House, D-Senate"),
+                         "no token rule separates these - which is why the group is refused")
+
+    def test_every_aligned_pair_passes_both_guards(self):
+        import json
+
+        import adjudicate
+
+        table = json.loads((ROOT / "docs" / "ALIGNMENT.json").read_text(encoding="utf-8"))
+        for pair in table["pairs"]:
+            if pair["label"] == "DISTINCT":
+                continue
+            key = adjudicate.ascii_safe(pair["kx_title"]).split(" / ")[0].strip()
+            pm = adjudicate.tokens(pair["pm_title"])
+            self.assertEqual(adjudicate.tokens(key) - pm, set(),
+                             f"aligned pair fails subject containment: {pair['pm_title']}")
+
+    def test_the_runner_can_announce_a_pass_not_only_a_withhold(self):
+        """A runner that structurally cannot report success is not a measurement."""
+        source = (ROOT / "scanc.py").read_text(encoding="utf-8")
+        block = source.split("def run_alignment")[1]
+        self.assertIn("TERMINAL branch applies", block)
+        self.assertIn("CLEARS both venues", block)
+
+
+class TestPass25ClassCRegistration(unittest.TestCase):
+    """Pass 25. Class C is registered before it is built, and argues against itself."""
+
+    def _proto(self):
+        return (ROOT / "docs" / "PROTOCOL.md").read_text(encoding="utf-8")
+
+    def test_class_c_declares_a_status(self):
+        self.assertIn("## Class C", self._proto())
+        self.assertIn("STATUS: GATE D.0 RUN", self._proto().split("## Class C")[1][:400])
+
+    def test_nothing_is_built_while_it_is_marked_not_run(self):
+        """Registration precedes the build, and this fails the moment that stops being true.
+
+        Gate D.0 has run (Pass 26), so ``gated.py`` is licensed and the clause no longer names it.
+        ``scand.py`` is still governed: **Gate D.0 licenses Gate D at most, never the measurement**,
+        and Gate D has not been run. A convergence pipeline standing here before its null gate is
+        the A7 violation the whole protocol is built to prevent.
+        """
+        self.assertFalse((ROOT / "scand.py").exists(),
+                         "scand.py exists but Gate D (the convergence null gate) has not passed")
+
+    def test_the_dead_on_arrival_check_precedes_the_build(self):
+        """Four crossings against two: the arithmetic that could refute the class for free."""
+        proto = self._proto()
+        self.assertIn("Gate D.0", proto)
+        self.assertIn("crosses four books", proto)
+        self.assertIn("refuted before it is built", proto)
+
+    def test_the_hedged_variant_is_the_registered_one(self):
+        """The unhedged variant is cheaper and cannot fail cleanly."""
+        proto = self._proto()
+        self.assertIn("The hedged variant is registered", proto)
+
+    def test_convergence_is_never_called_riskless(self):
+        proto = self._proto()
+        self.assertIn("Convergence is not arbitrage", proto)
+
+    def test_the_null_worlds_name_bid_ask_bounce(self):
+        """The false-positive generator must be named, not left as 'noise'."""
+        self.assertIn("bid-ask bounce", self._proto().lower())
+
+
+class TestPass26RegisteredExclusionsMustBeEnforcedOrReported(unittest.TestCase):
+    """Pass 26. Gate D.0's verdict flipped on a precondition no scanner in this repo enforces.
+
+    ``PROTOCOL.md`` excludes longshots *at every gate* and ``CostModel.price_in_band`` implements it,
+    but it is called only in ``kairos.gate`` and ``kairos.sizing``. 52 of 81 priced pairs were out of
+    band and the widest gap in the table sat on a market quoted at 3.8 cents, so the class is NOT
+    REFUTED unbanded and REFUTED banded.
+
+    The property this encodes is not "apply the band" — it is **a runner that renders a verdict a
+    registered exclusion would change must report both readings** rather than pick one silently.
+    """
+
+    def test_the_round_trip_reports_what_it_traded_at_so_the_band_can_be_applied(self):
+        from kairos.book import Book, Level
+        from kairos.costs import CONSERVATIVE
+        from kairos.crossvenue import round_trip_cost
+
+        def leg(ask, bid):
+            return Book(asks=(Level(ask, 100),), bids=(Level(bid, 100),))
+
+        longshot = round_trip_cost(leg(0.02, 0.01), leg(0.96, 0.95),
+                                   size=25, days_held=7.0, costs=CONSERVATIVE)
+        self.assertFalse(CONSERVATIVE.price_in_band(longshot.yes_vwap),
+                         "a caller cannot apply the exclusion it cannot see")
+
+    def test_the_gate_d0_runner_applies_the_band_and_reports_the_disagreement(self):
+        src = (ROOT / "gated.py").read_text(encoding="utf-8")
+        self.assertIn("price_in_band", src, "gated.py renders a verdict without the exclusion")
+        self.assertIn("THE TWO DISAGREE", src,
+                      "gated.py must surface a banded/unbanded split rather than pick one")
+
+    def test_the_scanners_that_do_not_enforce_it_are_still_the_ones_recorded(self):
+        """Anti-drift in the awkward direction: enforcing it later is fine, *silently* is not.
+
+        Pass 26 records that ``scanb.py`` and ``scanc.py`` measured their nulls without this
+        exclusion. If a later session adds it, their recorded results no longer describe the code
+        that produced them — so this fails and forces the record to be updated with the re-run.
+        """
+        for scanner in ("scanb.py", "scanc.py"):
+            self.assertNotIn("price_in_band", (ROOT / scanner).read_text(encoding="utf-8"),
+                             f"{scanner} now enforces the longshot band, but CORRECTIONS.md Pass "
+                             f"26.1 still records that it does not - update the record and say "
+                             f"whether the recorded null was re-measured")
+
+
+class TestPass27ARateHurdleCannotMeasureAScaleConstraint(unittest.TestCase):
+    """Pass 27. Gate 4.0's registered floor was cleared and the clearing meant nothing.
+
+    The floor was "beat 6%/yr on capital locked" — an *existing* constant, chosen so it could not be
+    a threshold invented to be clearable. Guarding a constant against being chosen is not the same as
+    checking it is the right **dimension**. Throughput is dollars; the floor tested a rate.
+    """
+
+    def test_the_measured_strategy_clears_a_rate_floor_while_earning_ten_dollars(self):
+        """The defect, in the numbers that produced it."""
+        from kairos.economics import StrategyEconomics
+
+        measured = StrategyEconomics(
+            name="Class C convergence @ 25",
+            edge_per_contract=0.00803,      # the one in-band opportunity, 2026-09-14
+            fillable_contracts=25.0,
+            opportunities_per_year=52.0,    # horizon-limited maximum at a 7-day hold
+            capital_required=24.40,         # deployable capital across the whole universe
+        )
+        self.assertTrue(measured.worth_building(0.06 * 24.40),
+                        "it does clear the registered rate floor")
+        self.assertLess(measured.net_annual_value, 11.0,
+                        "and a rate hurdle cannot see that this is ten dollars a year")
+
+    def test_a_capacity_runner_reports_an_absolute_magnitude_not_only_a_rate(self):
+        """A verdict about whether something is a business must be stated in dollars."""
+        src = (ROOT / "gate4.py").read_text(encoding="utf-8").lower()
+        self.assertIn("deployable capital", src,
+                      "gate4.py must report the absolute capital the universe can absorb")
+        self.assertIn("necessary, never sufficient", src,
+                      "clearing the rate floor must be labelled insufficient wherever it is printed")
+
+    def test_no_recurrence_rescues_a_non_positive_edge(self):
+        """Infinity is an impossibility, not a large number, and must not render as one."""
+        from kairos.economics import StrategyEconomics
+
+        recorded_class_b = StrategyEconomics(
+            name="Class B negRisk @ 25 (recorded)",
+            edge_per_contract=-0.00597,     # SCANB-RESULTS.md, the *best* of 78 priced groups
+            fillable_contracts=25.0,
+            opportunities_per_year=4067.0,
+            capital_required=25.0,
+        )
+        self.assertEqual(recorded_class_b.required_opportunities_for(1.50), float("inf"))
+        self.assertLess(recorded_class_b.net_annual_value, 0.0)
+
+
+class TestPass28ADecisionRuleMustStateItsWeighting(unittest.TestCase):
+    """Pass 28. Three gates, three decision-rule defects, zero measurement defects.
+
+    26.1 omitted a standing precondition, 27.1 tested a rate against a magnitude, 28.1 weighted
+    markets when the hypothesis was about flow. Every apparatus worked; every error was in the
+    sentence deciding what the number meant. The protocol's discipline is aimed almost entirely at
+    the measurement and inspects none of this.
+    """
+
+    def test_an_unweighted_median_can_say_room_while_the_flow_says_stuck(self):
+        """The defect as a property: it survives a rewrite of the specific statistic."""
+        import gatem
+
+        # Wide spreads in markets nobody trades; the flow is in one-tick markets. This is the
+        # measured shape -- 37.2% of markets at one tick carrying 77.4% of the volume.
+        rows = [
+            (0.001, 0.001, 0.50, 1_000_000.0),   # 1 tick, enormous flow
+            (0.001, 0.001, 0.50, 1_000_000.0),   # 1 tick, enormous flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+            (0.020, 0.001, 0.50, 1.0),           # 20 ticks, no flow
+        ]
+        ticks = sorted(s / t for s, t, _, _ in rows)
+        self.assertGreater(ticks[len(ticks) // 2], 1.0,
+                           "unweighted, the median market has room to quote")
+        self.assertGreater(gatem.flow_share_at_one_tick(rows), 0.99,
+                           "and essentially all of the money is where it does not")
+
+    def test_the_runner_reports_the_flow_weighted_reading_beside_the_registered_one(self):
+        src = (ROOT / "gatem.py").read_text(encoding="utf-8").lower()
+        self.assertIn("share of flow", src,
+                      "gatem.py must report the flow-weighted statistic, not only the median")
+
+    def test_the_maker_capture_is_labelled_an_upper_bound_wherever_it_is_defined(self):
+        """Adverse selection is the whole of maker P&L and is excluded. That must not go quiet."""
+        from kairos.costs import CostModel
+
+        doc = (CostModel.maker_capture.__doc__ or "").lower()
+        self.assertIn("adverse selection", doc)
+        self.assertIn("upper bound", doc)
+
+
+class TestPass29NullWorldsMustMatchTheRegimeTheyValidate(unittest.TestCase):
+    """Pass 29. Gate M's null worlds traded every step; the real series is 95.7% stale.
+
+    Measured on real Polymarket history before the verdict was believed: 95.7% of minute-to-minute
+    prices unchanged, 59.6% of contributions exactly zero. The estimator had been validated on a
+    process the data does not resemble — the same G14 failure Gate C committed with power 1.000 on
+    its own parser's dialect and 0/26 on real text.
+    """
+
+    def test_the_estimator_still_separates_the_worlds_at_the_measured_staleness(self):
+        import gatem
+        from kairos.microstructure import realized_half_spread
+
+        common = dict(half_spread=0.01, vol=0.0, drift=0.0, stale=0.957)
+        uninformed = gatem.synthetic_market(60_000, informed_frac=0.0, impact=0.0, seed=4, **common)
+        informed = gatem.synthetic_market(60_000, informed_frac=1.0, impact=0.02, seed=4, **common)
+        self.assertGreater(realized_half_spread(uninformed, 60), 0.005,
+                           "a surviving spread must still be visible through the staleness")
+        self.assertLess(realized_half_spread(informed, 60), 0.0,
+                        "and a loss must still read as a loss")
+
+    def test_the_stale_worlds_are_in_the_gated_set_not_just_available(self):
+        """A world that exists but is never run validates nothing."""
+        import gatem
+
+        names = [name for name, _, _ in gatem.WORLDS]
+        self.assertTrue(any("STALE" in n for n in names),
+                        "the regime the measurement runs in must be among the gated worlds")
+        self.assertTrue(any("STALE" in n and truth for n, _, truth in gatem.WORLDS))
+        self.assertTrue(any("STALE" in n and not truth for n, _, truth in gatem.WORLDS))
+
+    def test_the_measurement_states_that_its_bias_flatters_the_maker(self):
+        """The direction of the known bias decides which verdict deserves suspicion."""
+        src = (ROOT / "scanm.py").read_text(encoding="utf-8").lower()
+        self.assertIn("flatters the maker", src)
+
+
+class TestPass30QueuePositionCannotBeatPriority(unittest.TestCase):
+    """Pass 30. Gate 3.0's registration let an entrant at the BACK of the queue out-earn one at the
+    front, by specifying fills as ``max(0, flow - depth)`` with no cap on posted size.
+
+    The arithmetic was right and the model was absurd. At equal posted size, an order behind the
+    resting queue can never fill more than one ahead of it — that is what price priority *is*.
+    """
+
+    def test_at_equal_size_the_back_of_the_queue_never_fills_more_than_the_front(self):
+        from kairos.book import queue_fills
+
+        size = 25.0
+        for flow, depth in ((5_420.0, 148.0), (100.0, 90.0), (50.0, 500.0), (0.0, 10.0)):
+            with self.subTest(flow=flow, depth=depth):
+                back = min(queue_fills(flow, depth), size)
+                front = min(flow, size)
+                self.assertLessEqual(back, front + 1e-9,
+                                     "an order behind the queue cannot out-fill one ahead of it")
+
+    def test_the_runner_reports_a_size_curve_rather_than_one_size(self):
+        """C11: the registration froze no size, so no single point may stand as the verdict."""
+        import gate3
+
+        self.assertGreaterEqual(len(gate3.SIZES), 3, "a design variable is not held at one value")
+        self.assertIn("SIZES", (ROOT / "gate3.py").read_text(encoding="utf-8"))
+
+    def test_the_retention_it_multiplies_is_sourced_from_the_measurement(self):
+        """A constant that decides a verdict must trace to a run, not to a guess."""
+        import gate3
+
+        self.assertAlmostEqual(gate3.RETENTION, 0.00039 / 0.01000, places=12)
+        self.assertLess(gate3.RETENTION, 0.05, "3.9% of the quoted half-spread, per scanm.py")
+
+
+class TestPass31AnOptimumWhereTheMeasuredThingPaysNothing(unittest.TestCase):
+    """Pass 31. Gate R's first run put its optimum at the one distance where rewards are zero.
+
+    The implementation had added an unregistered capture term and reported $3,257,641/yr at
+    ``s/v = 1.0``. An optimum sitting exactly where the thing being measured pays nothing is a
+    structural tell that the number came from somewhere else — here, from applying Gate M's constant
+    at 4-6x the distance it was measured at, a caveat the code carried in a comment and then let
+    stand as the verdict.
+    """
+
+    def test_the_reward_term_is_zero_at_the_edge_so_an_optimum_there_is_not_reward_driven(self):
+        from kairos.rewards import order_score
+
+        self.assertEqual(order_score(0.045, 0.045, 2000.0), 0.0)
+        self.assertGreater(order_score(0.045, 0.0, 2000.0), 0.0)
+
+    def test_the_runner_reports_both_accountings_rather_than_picking_one(self):
+        """Pass 31.2: the frozen rule double-counts, so neither reading may stand alone."""
+        src = (ROOT / "gater.py").read_text(encoding="utf-8").lower()
+        self.assertIn("registered", src)
+        self.assertIn("consistent", src)
+        self.assertIn("retention", src, "the Gate-M-consistent per-fill P&L must be present")
+
+    def test_a_pool_nobody_can_qualify_for_is_counted_separately(self):
+        """AXIOMS G5: a zero-max-spread pool is a real finding, not a market with no pool."""
+        src = (ROOT / "gater.py").read_text(encoding="utf-8")
+        self.assertIn("pool_with_zero_max_spread", src)
+        self.assertIn("no_reward_pool", src)
+
+
+class TestPass32AnEstimatorMustNotPayForBeingLiquidated(unittest.TestCase):
+    """Pass 32.1: crediting the spot leg at the overshot price manufactured profit from a breach."""
+
+    def test_a_violent_breach_cannot_pay_more_than_a_marginal_one(self):
+        from kairos.carry import simulate
+
+        f = [0.0001] * 100
+        a = simulate(f, [0.20] + [0.0] * 99, leverage=5.0, taker_fee=0.0005, penalty=0.01)
+        b = simulate(f, [0.80] + [0.0] * 99, leverage=5.0, taker_fee=0.0005, penalty=0.01)
+        self.assertTrue(a.liquidated and b.liquidated)
+        self.assertAlmostEqual(a.pnl, b.pnl, places=12)
+
+
+class TestPass33AFeeConstantMustNeverUndercharge(unittest.TestCase):
+    """Pass 33.1: every Polymarket cost this project computed used 0.07 where the live schedules
+    run 0.03 to 0.07. The error is tolerable **only** because 0.07 is the maximum, so the default
+    can overstate a cost but never understate one. That one-directionality is the property."""
+
+    #: Observed live on 1,445 markets across 11 distinct `feeSchedule` values (Gate M2).
+    LIVE_RATES = (0.03, 0.04, 0.05, 0.07)
+
+    def test_the_default_coefficient_is_the_ceiling_of_the_live_schedules(self):
+        from kairos.costs import CONSERVATIVE
+
+        self.assertEqual(CONSERVATIVE.taker_fee_coeff, max(self.LIVE_RATES))
+
+    def test_the_default_never_charges_less_than_any_live_rate_anywhere_in_band(self):
+        from kairos.costs import CONSERVATIVE, CostModel
+
+        for rate in self.LIVE_RATES:
+            cheaper = CostModel(taker_fee_coeff=rate)
+            for price in (0.05, 0.2, 0.5, 0.8, 0.95):
+                self.assertGreaterEqual(
+                    CONSERVATIVE.fee(price), cheaper.fee(price),
+                    f"default understates the cost at rate {rate} price {price}: a refutation "
+                    f"computed with it would not stand a fortiori",
+                )
+
+    def test_makers_are_charged_nothing_which_is_what_taker_only_means(self):
+        """`takerOnly` is true on 11 of 11 live schedules."""
+        from kairos.costs import CONSERVATIVE
+
+        self.assertEqual(CONSERVATIVE.fee(0.5, maker=True), 0.0)
+
+
+class TestPass33ARateTableInProseCannotBeChecked(unittest.TestCase):
+    """Pass 33.2: the registration's transcribed rate table was stale (sports pays 15%, not 20%)
+    and its claim about the dominant category was wrong. Neither reached the arithmetic because the
+    runner reads each market's live `feeSchedule`. Keeping it that way is the guard."""
+
+    def test_the_runner_reads_the_schedule_from_the_market(self):
+        src = (ROOT / "gatem2.py").read_text(encoding="utf-8")
+        self.assertIn('m.get("feeSchedule")', src)
+        self.assertIn('fs["rate"]', src)
+        self.assertIn('fs["rebateRate"]', src)
+
+    def test_a_fee_free_market_yields_no_rebate_rather_than_a_default_one(self):
+        """Geopolitics is fee-free: no fee paid means no rebate pool to share. Excluded by
+        arithmetic, not by choice (AXIOMS G5 — a refusal is not a measurement of zero)."""
+        import gatem2
+
+        self.assertEqual(
+            gatem2.fee_terms({"feesEnabled": True,
+                              "feeSchedule": {"rate": 0.0, "rebateRate": 0.25}}),
+            "fee_free_no_rebate",
+        )
+        self.assertEqual(gatem2.fee_terms({"feesEnabled": False}), "fees_disabled")
+        self.assertEqual(gatem2.fee_terms({"feesEnabled": True}), "no_fee_schedule")
+        self.assertEqual(
+            gatem2.fee_terms({"feesEnabled": True,
+                              "feeSchedule": {"rate": 0.04, "rebateRate": 0.25}}),
+            (0.04, 0.25),
+        )
+
+
+class TestPass33ASubsidyMustPayForTheCapitalItRequires(unittest.TestCase):
+    """Pass 33.3: holding rewards were added as a positive with nothing charged for the capital
+    they are paid on. 3.25% on capital costing 6% is a loss, and the first run booked it as a gain.
+    Pass 27.1 in a new costume: a rate added to a dollar total without pricing the dollars."""
+
+    def test_holding_rewards_do_not_clear_the_capital_hurdle_they_are_paid_on(self):
+        from kairos.costs import CONSERVATIVE
+        from kairos.rewards import holding_reward
+        import gatem2
+
+        capital = 390_000.0
+        earned = holding_reward(capital, gatem2.HOLDING_RATE, 365.0)
+        cost = capital * CONSERVATIVE.settlement_wedge_annual
+        self.assertLess(earned, cost, "the subsidy must not be booked as a net gain")
+        # Sensitivity: the guard discriminates — at the hurdle rate it would break even exactly.
+        self.assertAlmostEqual(
+            holding_reward(capital, CONSERVATIVE.settlement_wedge_annual, 365.0), cost, places=6)
+
+    def test_the_runner_charges_capital_and_reports_a_net(self):
+        src = (ROOT / "gatem2.py").read_text(encoding="utf-8")
+        self.assertIn("cap_cost", src)
+        self.assertIn("settlement_wedge_annual", src)
+        self.assertIn("net = sp + rb + hold - cap_cost", src,
+                      "Pass 33.4: holding rewards are a cost-bearing term and belong in NET")
+
+    def test_the_rebate_is_flat_in_competition_unlike_the_liquidity_pool(self):
+        """The structural finding: pool and share scale together, so per-contract rebate is
+        `rebateRate x feeRate x p(1-p)` whatever other makers do. Gate R's congestion game
+        (`order_score` falls to zero at the max-spread edge) is a different regime, and the two
+        must not be reasoned about together."""
+        from kairos.rewards import maker_rebate
+
+        self.assertAlmostEqual(maker_rebate(0.04, 0.25, 0.5), 0.0025, places=12)
+        self.assertEqual(maker_rebate(0.0, 0.25, 0.5), 0.0, "no fee, no rebate")
+
+
+class TestPass34ARunnerMustImplementItsOwnRegisteredRule(unittest.TestCase):
+    """Pass 34.1: the registered rule said "fewer than 2 succession pairs -> NO VERDICT"; the
+    runner tested `if not pairs:` and reported NOT REFUTED on one. Pass 33.5 one gate later."""
+
+    def test_the_pair_minimum_is_a_named_constant_compared_with_less_than(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("MIN_PAIRS = 2", src)
+        self.assertIn("len(pairs) < MIN_PAIRS", src)
+        self.assertNotIn("if not pairs:", src,
+                         "a truthiness check cannot express a minimum of two")
+
+    def test_tradeability_filters_are_absent_from_the_cohort_sweep(self):
+        """Pass 34.3: band and tick-room filters select on recency and would manufacture
+        the separation the gate is trying to detect."""
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        sweep = src.split("[2/4]")[1].split("[3/4]")[0]
+        self.assertNotIn("price_in_band", sweep)
+        self.assertNotIn("no_tick_room", sweep)
+        self.assertIn("feesEnabled", sweep)
+
+
+class TestPass34AHazardBoundMayNotAssumeIndependence(unittest.TestCase):
+    """Pass 34.4: one decision withdraws every schedule, so schedule-months counts twelve
+    consequences of a single choice as twelve trials. The wider bound governs."""
+
+    def test_more_assumed_units_always_produce_a_tighter_and_therefore_wronger_bound(self):
+        from kairos.persistence import annual_hazard_bound, rule_of_three
+
+        programme = annual_hazard_bound(rule_of_three(14))
+        schedules = annual_hazard_bound(rule_of_three(113))
+        self.assertGreater(programme, schedules)
+        self.assertGreater(programme, 0.90, "14 months of observation bounds almost nothing")
+
+    def test_the_runner_lets_the_programme_level_count_govern(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("GOVERNING", src)
+        self.assertIn("prog_months", src)
+
+    def test_no_function_in_the_module_returns_a_survival_probability(self):
+        """Zero observed events bounds a hazard; it never estimates one."""
+        from kairos import persistence
+
+        for name in persistence.__all__:
+            self.assertNotIn("surviv", name.lower())
+            self.assertNotIn("probab", name.lower())
+
+
+class TestPass34ATakesAreNotComparableAcrossExponents(unittest.TestCase):
+    """Pass 34.2: `crypto_15_min` is live at `exponent: 2`, where the fee is `rate x (p(1-p))^2`."""
+
+    def test_a_cross_exponent_comparison_is_refused_not_computed(self):
+        from kairos.persistence import take_pair
+
+        with self.assertRaises(ValueError):
+            take_pair((0.03, 0.25, 1), (0.25, 0.20, 2))
+        self.assertEqual(take_pair((0.03, 0.25, 1), (0.05, 0.15, 1)), (0.0075, 0.0075))
+
+    def test_direction_and_instability_remain_two_statistics(self):
+        """The signed mean averages churn to zero; only the unsigned one survives it."""
+        from kairos.persistence import weighted_direction, weighted_instability
+
+        churn = [(0.010, 0.015), (0.010, 0.005)]
+        self.assertAlmostEqual(weighted_direction(churn, [1.0, 1.0]), 0.0, places=12)
+        self.assertGreater(weighted_instability(churn, [1.0, 1.0]), 0.4)
+
+
+class TestPass35ADesignVariableIsNotHeldAtOneValue(unittest.TestCase):
+    """Pass 35.1: Gate S's payback table varied build cost and froze posted size at the largest
+    rung, reporting "6.2 months, clears" as though it were general. At $19,500 of capital one
+    person-month of build takes 17.8 months against a subsidy observed to exist for 14.4."""
+
+    def test_the_payback_table_varies_size_as_well_as_build_cost(self):
+        src = (ROOT / "gates.py").read_text(encoding="utf-8")
+        self.assertIn("M2_BY_SIZE", src)
+        self.assertNotIn("M2_NET_ANNUAL", src, "a scalar net freezes the size dimension")
+        self.assertIn("for size, cap, net in M2_BY_SIZE", src)
+
+    def test_the_measured_curve_carries_more_than_one_rung(self):
+        import gates
+
+        self.assertGreaterEqual(len(gates.M2_BY_SIZE), 4)
+        self.assertEqual(len({s for s, _, _ in gates.M2_BY_SIZE}), len(gates.M2_BY_SIZE))
+
+    def test_small_capital_cannot_repay_a_build_inside_the_observed_programme_life(self):
+        """The finding the frozen size hid. 14.4 months is the whole observed fee-programme span."""
+        import gates
+
+        observed_life_months = 14.4
+        _, capital, net = gates.M2_BY_SIZE[0]
+        payback = gates.PERSON_MONTH_COST / (net / 12.0)
+        self.assertLess(capital, 10_000.0)
+        self.assertGreater(payback, observed_life_months,
+                           "at the smallest measured size one person-month of build must not "
+                           "appear to repay inside the subsidy's observed life")
+
+    def test_return_on_capital_saturates_rather_than_scaling_forever(self):
+        """Taker flow beyond the queue is finite (Gate 3.0), so the last dollar earns least."""
+        import gates
+
+        rocs = [net / cap for _, cap, net in gates.M2_BY_SIZE]
+        self.assertLess(rocs[-1], rocs[0], "the largest rung must not out-earn the smallest")
+
+
+class TestPass36AThresholdComparisonNeedsAnInterval(unittest.TestCase):
+    """Pass 36.1: Class K registered "share <= 22.6% -> REFUTED" with no uncertainty on either
+    side. As registered it returns NOT REFUTED at 26.6%; with an interval it returns NO VERDICT.
+
+    This is Pass 29 repeating in a registration written after Pass 29 was recorded, which is why
+    the guard below is about the *shape* of the comparison rather than about one estimator."""
+
+    def test_the_runner_routes_a_venue_comparison_through_an_interval(self):
+        src = (ROOT / "gatek.py").read_text(encoding="utf-8")
+        self.assertIn("weighted_share_ci", src)
+        self.assertIn("NO VERDICT", src, "three-state discipline, not a two-way threshold")
+        self.assertIn("ci[0] <= POLYMARKET_FLOW_WITH_ROOM <= ci[1]", src)
+
+    def test_an_interval_that_straddles_the_comparator_cannot_be_a_verdict(self):
+        from kairos.inference import weighted_share_ci
+
+        # A sample whose share sits near the comparator must not exclude it.
+        flags = [True] * 23 + [False] * 77
+        ci = weighted_share_ci(flags, [1.0] * 100, seed=11)
+        self.assertLessEqual(ci[0], 0.226)
+        self.assertGreaterEqual(ci[1], 0.226)
+
+    def test_concentration_of_weight_widens_rather_than_narrows_the_interval(self):
+        """Pass 36.2: the first test written here asserted the opposite and the code was right.
+        A resample of n units omits any given one in ~37% of draws at n=100, so a share carried
+        by one market is barely estimated and must not report a narrow interval."""
+        from kairos.inference import weighted_share_ci
+
+        flags = [True] + [False] * 99
+        concentrated = weighted_share_ci(flags, [999.0] + [1.0] * 99, seed=3)
+        spread_out = weighted_share_ci([True] * 50 + [False] * 50, [1.0] * 100, seed=3)
+        self.assertGreater(concentrated[1] - concentrated[0], spread_out[1] - spread_out[0])
+
+    def test_spread_is_measured_in_ticks_because_the_venue_runs_three_structures(self):
+        """Cents are not comparable across linear_cent, deci_cent and tapered_deci_cent."""
+        import gatek
+
+        m = {"status": "active", "yes_bid_dollars": "0.40", "yes_ask_dollars": "0.42",
+             "volume_24h_fp": "100", "price_ranges": [{"start": "0", "end": "1", "step": "0.01"}]}
+        spread, tick, mid, flow = gatek.quote(m)
+        self.assertAlmostEqual(spread / tick, 2.0, places=9)
+        self.assertAlmostEqual(mid, 0.41, places=9)
+
+    def test_a_market_with_no_flow_is_refused_rather_than_counted_at_zero(self):
+        """AXIOMS G5: a market that traded nothing has no maker economics to measure."""
+        import gatek
+
+        m = {"status": "active", "yes_bid_dollars": "0.40", "yes_ask_dollars": "0.42",
+             "volume_24h_fp": "0", "price_ranges": [{"start": "0", "end": "1", "step": "0.01"}]}
+        self.assertEqual(gatek.quote(m), "no_flow")
+
+
+class TestPass37ATickIsNotAUnitComparableAcrossVenues(unittest.TestCase):
+    """Pass 37.1: Smarkets ladders in decimal odds, giving a probability tick of ~0.005-0.008
+    against the flat cent used by Polymarket and Kalshi. On Gate K.0's tick-room statistic that
+    reads 100.0% vs 26.6% -- a four-fold apparent win that is purely a tick-size artefact."""
+
+    def test_the_probability_tick_shrinks_as_the_odds_ladder_coarsens(self):
+        import gatesm
+
+        # Same odds increment, different price: the probability step is not a constant.
+        fine = gatesm.probability_tick(0.90)
+        mid = gatesm.probability_tick(0.50)
+        self.assertNotAlmostEqual(fine, mid, places=4,
+                                  msg="a price-dependent tick must not be treated as flat")
+        for p in (0.05, 0.25, 0.5, 0.75, 0.95):
+            self.assertLess(gatesm.probability_tick(p), 0.01,
+                            "the Smarkets tick is finer than a cent across the whole band")
+
+    def test_a_price_outside_the_unit_interval_has_no_tick(self):
+        import gatesm
+
+        for bad in (0.0, 1.0, -0.1, 1.5):
+            self.assertIsNone(gatesm.probability_tick(bad))
+
+    def test_the_primary_statistic_is_in_probability_units_not_ticks(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("COMPARATOR_HALF_SPREAD", src)
+        self.assertIn("PRIMARY units: PROBABILITY", src)
+        self.assertIn("NOT comparable to Kalshi", src,
+                      "the tick-room reading must carry its confound wherever it is printed")
+
+    def test_the_odds_ladder_is_monotone_and_covers_every_price(self):
+        import gatesm
+
+        steps = [gatesm.odds_increment(o) for o in (1.5, 2.5, 3.5, 5.0, 8.0, 15.0, 50.0)]
+        self.assertEqual(steps, sorted(steps), "a coarser ladder at longer odds, never finer")
+        self.assertEqual(gatesm.odds_increment(1000.0), 1.00)
+
+
+class TestPass37AMissingMappingMustWithholdNotDefault(unittest.TestCase):
+    """Pass 37.2: the contract->market mapping was built from `contract_selections`, which is null.
+    Every market then failed the flow precondition and the gate WITHHELD -- correctly. A runner
+    that defaulted missing volume to 'include anyway' would have called an unweighted result
+    flow-weighted (AXIOMS G5: an error and a measurement never share a counter)."""
+
+    def test_the_mapping_comes_from_the_contracts_endpoint(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("/contracts/", src)
+        self.assertIn('row["market_id"]', src)
+        self.assertNotIn("contract_selections\"]", src)
+
+    def test_a_fetch_failure_is_an_error_not_an_empty_result(self):
+        import gatesm
+
+        boom = urllib.error.URLError("refused")
+        with mock.patch("urllib.request.urlopen", side_effect=boom):
+            result = gatesm.get("/markets/1/quotes/")
+        self.assertIn("_error", result)
+        self.assertNotIn("quotes", result, "a failure must not look like an empty success")
+
+    def test_the_runner_withholds_below_its_sample_floor(self):
+        src = (ROOT / "gatesm.py").read_text(encoding="utf-8")
+        self.assertIn("MIN_MARKETS", src)
+        self.assertIn("WITHHELD", src)
+        self.assertIn("len(rows) < MIN_MARKETS", src)
+
+
+class TestPass38AFlooringHelperIsWrongForADeadline(unittest.TestCase):
+    """Pass 38.2: time-to-resolution was `-age_hours(endDate)`, and `age_hours` floors at 0 -- so
+    every FUTURE deadline collapsed to `-0h` and the registered confound column was meaningless.
+
+    Second flooring helper misused in one gate: `gatem.days_since` floors at 1.0 DAY and would have
+    collapsed the whole youngest bucket. That one was caught by reading, this one only by reading
+    the output."""
+
+    def test_an_age_is_floored_at_zero_and_a_deadline_is_not(self):
+        import gaten
+
+        future = "2099-01-01T00:00:00Z"
+        self.assertEqual(gaten.age_hours(future), 0.0, "an age in the future is zero, not negative")
+        self.assertGreater(gaten.signed_hours_until(future), 0.0,
+                           "a deadline in the future must stay positive and unfloored")
+
+    def test_a_past_deadline_is_negative_rather_than_clamped(self):
+        import gaten
+
+        self.assertLess(gaten.signed_hours_until("2000-01-01T00:00:00Z"), 0.0)
+
+    def test_the_day_flooring_helper_is_not_used_for_bucketing(self):
+        """`gatem.days_since` returns max(1.0, ...) days: it cannot tell 10 minutes from 23 hours."""
+        import gatem
+
+        self.assertEqual(gatem.days_since("2099-01-01T00:00:00Z"), 1.0)
+        src = (ROOT / "gaten.py").read_text(encoding="utf-8")
+        # Mentions in docstrings explain why it is avoided; a CALL would collapse the buckets.
+        self.assertNotIn("days_since(", src, "the floored helper must not reach the age buckets")
+        self.assertNotIn("import days_since", src)
+
+    def test_bucket_boundaries_are_frozen_constants(self):
+        """AXIOMS A8/C7: moving a boundary after a result converts the test into a cut-point search."""
+        import gaten
+
+        self.assertEqual([n for _, n in gaten.BUCKETS],
+                         ["<6h", "6-24h", "1-7d", "7-30d", ">30d"])
+        self.assertEqual(gaten.bucket_of(0.5), "<6h")
+        self.assertEqual(gaten.bucket_of(23.9), "6-24h")
+        self.assertEqual(gaten.bucket_of(10_000.0), ">30d")
+
+
+class TestPass38AnEmptyBookIsSignalNotRefusal(unittest.TestCase):
+    """Pass 38.5 / AXIOMS G5. Every prior gate counted a market with no two-sided book as a
+    refusal. For Class N it is the signal, and discarding it would have thrown away 93.7% of the
+    young population -- the exact cases the hypothesis is about."""
+
+    def test_a_market_with_no_quote_is_retained_with_a_null_spread(self):
+        import gaten
+
+        m = {"active": True, "createdAt": "2026-09-14T00:00:00Z", "volume24hr": "100",
+             "endDate": "2026-09-20T00:00:00Z"}
+        result = gaten.classify(m)
+        self.assertNotIsInstance(result, str, "no book must not be a refusal in this gate")
+        _bucket, _age, half, flow, _ttr = result
+        self.assertIsNone(half, "absence of a quote is recorded as None, not as zero spread")
+        self.assertEqual(flow, 100.0)
+
+    def test_a_quoted_market_yields_a_half_spread(self):
+        import gaten
+
+        m = {"active": True, "createdAt": "2026-09-14T00:00:00Z", "volume24hr": "100",
+             "endDate": "2026-09-20T00:00:00Z", "spread": "0.04", "lastTradePrice": "0.5"}
+        _bucket, _age, half, _flow, _ttr = gaten.classify(m)
+        self.assertAlmostEqual(half, 0.02, places=9)
+
+    def test_an_inactive_market_is_still_a_refusal(self):
+        import gaten
+
+        self.assertEqual(gaten.classify({"active": False}), "inactive")
+
+    def test_the_capacity_floor_is_checked_before_the_spread(self):
+        """A wide quote nobody trades against is not an opportunity, so capacity governs."""
+        src = (ROOT / "gaten.py").read_text(encoding="utf-8")
+        cap = src.index("capacity < CAPACITY_FLOOR")
+        straddle = src.index("ci[0] <= 0.5 <= ci[1]")
+        self.assertLess(cap, straddle, "the capacity branch must be evaluated first")
+
+
+class TestPass39TheFrontPageIsGatedToo(unittest.TestCase):
+    """Pass 39: the README asserted eleven results, six counts and a methodological virtue, and
+    was the only document in the repository that had never been falsified against anything.
+
+    The guard is that the falsifier suite exists and keeps covering the claims that matter -- above
+    all the pre-registration claim, which git can only partly support (39.1)."""
+
+    def test_the_readme_falsifier_suite_exists_and_covers_the_load_bearing_claims(self):
+        src = (ROOT / "tests" / "test_readme_claims.py").read_text(encoding="utf-8")
+        for required in ("TestRegistrationPrecedesImplementation", "TestNothingEverTraded",
+                         "TestZeroDependencies", "TestHeadlineFiguresTraceToEvidence",
+                         "TestCountsAreTrue"):
+            self.assertIn(required, src, f"README falsifier {required} was removed")
+
+    def test_the_readme_still_discloses_that_pre_registration_is_only_partly_provable(self):
+        """39.1: six of eight gates committed registration and runner together. Removing that
+        disclosure would restore the overclaim the pass was written to correct.
+
+        The figure survived the squash at 2 of 8 because the history was preserved on a tag
+        rather than deleted (Pass 41). The README must still disclose the limit, still say why
+        `main` cannot carry the proof, and now name the ref that can.
+        """
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("2 of 8 gates can prove it from the artifact", readme)
+        self.assertIn("back-filled", readme.lower())
+        self.assertIn("squash", readme.lower())
+        self.assertIn("provenance/pre-squash", readme)
+
+    def test_a_falsifier_may_not_invoke_the_suite_that_contains_it(self):
+        """39.3: the first test-count falsifier shelled out to `unittest discover`, rediscovered
+        itself and recursed until killed. A test that runs the test suite is not a test."""
+        src = (ROOT / "tests" / "test_readme_claims.py").read_text(encoding="utf-8")
+        self.assertNotIn("unittest\", \"discover", src)
+        self.assertNotIn("'unittest', 'discover'", src)
+
+    def test_the_licence_permits_the_reuse_the_readme_invites(self):
+        """39.4: a repo whose stated value is 'numbers worth stealing' must permit the stealing."""
+        self.assertTrue((ROOT / "LICENSE").exists())
+        self.assertIn("Apache License", (ROOT / "LICENSE").read_text(encoding="utf-8"))
+
+
+class TestPass40TheSquashIsRecordedNotHidden(unittest.TestCase):
+    """Pass 40: the development history was squashed to a single commit and force-pushed to a
+    public `main`, destroying the only independently verifiable evidence of pre-registration --
+    the Class C and Class S registration commits that landed before their runners.
+
+    This breaks AXIOMS C9a, which permits erasure only where the artifact is itself the hazard.
+    The axiom was deliberately not amended to excuse it. The guard is that the loss stays disclosed,
+    the constant stays honest, and the falsifier keeps its teeth.
+    """
+
+    def test_the_axiom_it_broke_was_not_amended_to_excuse_it(self):
+        """40.2: recording a violation is correct; rewriting the rule to permit it is not.
+
+        C9a is the axiom Pass 41 then satisfied by preservation rather than by exemption, which
+        is the outcome that vindicates leaving it alone."""
+        axioms = (ROOT / "docs" / "AXIOMS.md").read_text(encoding="utf-8")
+        self.assertIn("Erasure is only correct where the artifact is *itself* the hazard", axioms,
+                      "C9a must stand as written; the violation belongs in CORRECTIONS.md")
+
+    def test_the_ratio_falsifier_is_an_equality_not_an_unfalsifiable_floor(self):
+        """40.3: `assertGreaterEqual(provable, 0)` passes for every possible input. A test that
+        cannot fail is not a test -- the same lesson as Pass 39.3, applied to a different file."""
+        flat = "".join((ROOT / "tests" / "test_readme_claims.py")
+                       .read_text(encoding="utf-8").split())
+        self.assertIn("assertEqual(provable,self.PROVABLE", flat,
+                      "the pre-registration ratio check must be an equality, not a floor")
+
+
+class TestPass41ProvenanceLivesOnARefNotOnMain(unittest.TestCase):
+    """Pass 41: the squash did not destroy the pre-registration evidence, it orphaned it.
+
+    Reachability from `main` is an accident of a commit object, not its substance. The 21-commit
+    history was preserved on the `provenance/pre-squash` tag, restoring the 2-of-8 proof to any
+    reader with a default clone, while `main` stays a single squashed commit. The tradeoff between
+    a clean history and verifiable evidence was never real.
+
+    The guard is that the ref keeps existing, the falsifier keeps reading it rather than HEAD, and
+    the README keeps telling a reader where to look.
+    """
+
+    PROVENANCE = "provenance/pre-squash"
+
+    def _git(self, *args: str) -> str:
+        import subprocess
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120).stdout.strip()
+
+    def test_the_provenance_ref_exists_and_carries_real_history(self):
+        """41.1: a tag that vanished, or was moved to the squashed root, proves nothing."""
+        self.assertTrue(self._git("rev-parse", "--verify", "--quiet",
+                                  self.PROVENANCE + "^{commit}"),
+                        f"{self.PROVENANCE} is missing; the pre-registration proof is unreachable")
+        depth = self._git("rev-list", "--count", self.PROVENANCE)
+        self.assertGreater(int(depth or 0), 1,
+                           "the provenance ref must carry the development history, not one commit")
+
+    def test_the_falsifier_reads_the_provenance_ref_not_head(self):
+        """41.2: reading HEAD would silently report zero on a squashed main -- the failure this
+        pass exists to prevent."""
+        flat = "".join((ROOT / "tests" / "test_readme_claims.py")
+                       .read_text(encoding="utf-8").split())
+        self.assertIn('PROVENANCE="provenance/pre-squash"', flat)
+        self.assertIn("_git(\"log\",self.PROVENANCE", flat,
+                      "the ratio check must walk the provenance ref, not the current branch")
+
+    def test_the_readme_tells_a_reader_how_to_check_it_themselves(self):
+        """41.3: evidence a reader cannot locate is not evidence."""
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("provenance/pre-squash", readme)
+        self.assertIn("git log provenance/pre-squash", readme,
+                      "the README must show the command, not merely name the ref")
+
+
+class TestCorrectionsLogStaysExecutable(unittest.TestCase):
+    """The meta-guard: this file must keep pace with the corrections log.
+
+    Not a count check — a reminder with teeth. If a pass is added to CORRECTIONS.md and nothing here
+    references it, the newest lesson is prose again, which is the condition that produced the G0.2
+    recurrence in the first place.
+    """
+
+    def test_every_execution_pass_recorded_has_a_guard_or_a_stated_reason(self):
+        log = (ROOT / "docs" / "CORRECTIONS.md").read_text(encoding="utf-8")
+        passes = {ln.split("—")[0].strip().removeprefix("## ").strip()
+                  for ln in log.splitlines() if ln.startswith("## Pass ")}
+        here = (ROOT / "tests" / "test_regressions.py").read_text(encoding="utf-8")
+        # Passes 1-3 are design corrections from contrarian review, not execution defects; they
+        # have no runnable surface to guard. Passes 4+ are execution defects.
+        execution = {p for p in passes if p.split()[-1].isdigit() and int(p.split()[-1]) >= 4}
+        unguarded = {p for p in execution if p.replace(" ", "") not in here.replace(" ", "")}
+        self.assertEqual(
+            unguarded, set(),
+            f"execution passes with no regression guard in this file: {sorted(unguarded)}. "
+            f"Add a test encoding the property, or add the pass to the documented exemptions.",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
