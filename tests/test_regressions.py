@@ -1525,6 +1525,85 @@ class TestPass37AMissingMappingMustWithholdNotDefault(unittest.TestCase):
         self.assertIn("len(rows) < MIN_MARKETS", src)
 
 
+class TestPass38AFlooringHelperIsWrongForADeadline(unittest.TestCase):
+    """Pass 38.2: time-to-resolution was `-age_hours(endDate)`, and `age_hours` floors at 0 -- so
+    every FUTURE deadline collapsed to `-0h` and the registered confound column was meaningless.
+
+    Second flooring helper misused in one gate: `gatem.days_since` floors at 1.0 DAY and would have
+    collapsed the whole youngest bucket. That one was caught by reading, this one only by reading
+    the output."""
+
+    def test_an_age_is_floored_at_zero_and_a_deadline_is_not(self):
+        import gaten
+
+        future = "2099-01-01T00:00:00Z"
+        self.assertEqual(gaten.age_hours(future), 0.0, "an age in the future is zero, not negative")
+        self.assertGreater(gaten.signed_hours_until(future), 0.0,
+                           "a deadline in the future must stay positive and unfloored")
+
+    def test_a_past_deadline_is_negative_rather_than_clamped(self):
+        import gaten
+
+        self.assertLess(gaten.signed_hours_until("2000-01-01T00:00:00Z"), 0.0)
+
+    def test_the_day_flooring_helper_is_not_used_for_bucketing(self):
+        """`gatem.days_since` returns max(1.0, ...) days: it cannot tell 10 minutes from 23 hours."""
+        import gatem
+
+        self.assertEqual(gatem.days_since("2099-01-01T00:00:00Z"), 1.0)
+        src = (ROOT / "gaten.py").read_text(encoding="utf-8")
+        # Mentions in docstrings explain why it is avoided; a CALL would collapse the buckets.
+        self.assertNotIn("days_since(", src, "the floored helper must not reach the age buckets")
+        self.assertNotIn("import days_since", src)
+
+    def test_bucket_boundaries_are_frozen_constants(self):
+        """AXIOMS A8/C7: moving a boundary after a result converts the test into a cut-point search."""
+        import gaten
+
+        self.assertEqual([n for _, n in gaten.BUCKETS],
+                         ["<6h", "6-24h", "1-7d", "7-30d", ">30d"])
+        self.assertEqual(gaten.bucket_of(0.5), "<6h")
+        self.assertEqual(gaten.bucket_of(23.9), "6-24h")
+        self.assertEqual(gaten.bucket_of(10_000.0), ">30d")
+
+
+class TestPass38AnEmptyBookIsSignalNotRefusal(unittest.TestCase):
+    """Pass 38.5 / AXIOMS G5. Every prior gate counted a market with no two-sided book as a
+    refusal. For Class N it is the signal, and discarding it would have thrown away 93.7% of the
+    young population -- the exact cases the hypothesis is about."""
+
+    def test_a_market_with_no_quote_is_retained_with_a_null_spread(self):
+        import gaten
+
+        m = {"active": True, "createdAt": "2026-09-14T00:00:00Z", "volume24hr": "100",
+             "endDate": "2026-09-20T00:00:00Z"}
+        result = gaten.classify(m)
+        self.assertNotIsInstance(result, str, "no book must not be a refusal in this gate")
+        _bucket, _age, half, flow, _ttr = result
+        self.assertIsNone(half, "absence of a quote is recorded as None, not as zero spread")
+        self.assertEqual(flow, 100.0)
+
+    def test_a_quoted_market_yields_a_half_spread(self):
+        import gaten
+
+        m = {"active": True, "createdAt": "2026-09-14T00:00:00Z", "volume24hr": "100",
+             "endDate": "2026-09-20T00:00:00Z", "spread": "0.04", "lastTradePrice": "0.5"}
+        _bucket, _age, half, _flow, _ttr = gaten.classify(m)
+        self.assertAlmostEqual(half, 0.02, places=9)
+
+    def test_an_inactive_market_is_still_a_refusal(self):
+        import gaten
+
+        self.assertEqual(gaten.classify({"active": False}), "inactive")
+
+    def test_the_capacity_floor_is_checked_before_the_spread(self):
+        """A wide quote nobody trades against is not an opportunity, so capacity governs."""
+        src = (ROOT / "gaten.py").read_text(encoding="utf-8")
+        cap = src.index("capacity < CAPACITY_FLOOR")
+        straddle = src.index("ci[0] <= 0.5 <= ci[1]")
+        self.assertLess(cap, straddle, "the capacity branch must be evaluated first")
+
+
 class TestCorrectionsLogStaysExecutable(unittest.TestCase):
     """The meta-guard: this file must keep pace with the corrections log.
 

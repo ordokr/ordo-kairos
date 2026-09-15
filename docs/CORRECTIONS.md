@@ -8,6 +8,72 @@ Newest pass at the top.
 
 ---
 
+## Pass 38 — Gate N.0 run; two flooring helpers reused where the floor was the wrong answer (2026-09-14)
+
+Class N registered and run. Result in [`GATEN-RESULTS.md`](GATEN-RESULTS.md). **REFUTED ON
+CAPACITY** — markets under 24h old carry **0.11%** of flow against a registered floor of 5%.
+
+### 38.1 A volume-ordered sampling frame cannot reach a population defined by newness
+
+The first run **WITHHELD at 173 young markets** against a floor of 200, having swept 3,996 — near the
+pagination ceiling. `gatem.open_universe` orders by **volume**, and a market listed an hour ago has
+had no time to accumulate any, so the frame systematically under-samples exactly the population the
+class is about.
+
+The gamma API supports `order=createdAt`, verified before the amendment was written. The frame became
+the **union of the volume sweep and an age sweep from both ends**, deduplicated — 5,224 classified
+markets, of which 2,139 young.
+
+Recorded as Class N Amendment 1 **before the measuring run**, not after seeing a result, and it
+altered no threshold, statistic, bucket boundary or decision rule. A floor on sample size is an
+instruction to obtain more of the right sample, never to lower the floor.
+
+### 38.2 `age_hours` floors at zero, so every future deadline collapsed to `-0h`
+
+The registration required the age/time-to-resolution confound to be **reported**. The first measuring
+run reported a column of `-0h` for every bucket, because time-to-resolution was computed as
+`-age_hours(endDate)` and `age_hours` returns `max(0.0, ...)`. A date in the future therefore floors
+to zero and negates to `-0.0`.
+
+The correlation printed alongside it (`-0.212`) was computed on the only rows with non-zero values —
+markets whose end date had already **passed**. It was meaningless.
+
+**This is the second flooring helper in this gate reused where the floor is wrong.** The first was
+caught in advance: `gatem.days_since` floors at `max(1.0, ...)` days and would have collapsed the
+entire youngest bucket into "1 day", which the registration named as an apparatus fact before the
+runner existed. The same class of defect, one caught by reading and one only by reading the output.
+
+Fixed with `signed_hours_until`, unfloored and signed. The corrected confound is **+0.331** across
+5,100 markets: young markets resolve in 25 hours, mature ones in 2,595.
+
+### 38.3 A diagnostic subsample took the first N rows, which were all from one bucket
+
+Queue depth was sampled as "the first 120 rows with a quote", and the union frame lists the volume
+sweep first — so all 120 came from `>30d` and the two young buckets printed "no books sampled". A
+comparison with nothing in one arm.
+
+Fixed to sample **per bucket**. The corrected figures are the sharpest in the result: median touch
+size **75** (<6h) and **36** (6–24h) against **6,284** (>30d).
+
+### 38.4 The pre-committed expectation was right, for the first time in four gates
+
+Registered: young markets will be wider and emptier — "close to mechanical, and not the interesting
+half" — and will carry too little flow, so the gate refutes on capacity. Both held: 16x wider, 93.7%
+with no book, 0.11% of flow.
+
+Gates K.0 and SM.0 both had directionally wrong expectations, as did this gate's spread half in the
+sense that its interval straddled. Recording expectations has been useful mainly when they were
+wrong; this is the case where it confirms the reasoning rather than correcting it.
+
+### 38.5 The finding worth carrying forward
+
+**A mechanism is not an opportunity.** Nine prior classes failed because the economics were thin or
+the counterparty was informed. This one failed with **every structural precondition true** — wider,
+emptier, thinner-queued, all in the predicted direction and by large margins — and no flow to trade
+against. The wide window is real and it closes before anyone arrives.
+
+---
+
 ## Pass 37 — Gate SM.0 run; a confound registered in advance prevented a four-fold false positive (2026-09-14)
 
 Class SM registered and run. Result in [`GATESM-RESULTS.md`](GATESM-RESULTS.md). **NO VERDICT** —

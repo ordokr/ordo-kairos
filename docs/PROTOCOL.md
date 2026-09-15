@@ -2255,6 +2255,143 @@ more to retain. Recorded before the numbers, and recorded as an expectation of r
 
 ---
 
+## Class N — New-listing dynamics, and Gate N.0
+
+> **REGISTERED 2026-09-14, before `gaten.py` was written and before any spread-by-age figure was
+> computed.** Runs: `python gaten.py`.
+>
+> **STATUS: RUN 2026-09-14 — REFUTED ON CAPACITY. Class N closes.** Markets under 24h old carry
+> **0.11%** of flow against a registered floor of **5%**. Full result in
+> [`GATEN-RESULTS.md`](GATEN-RESULTS.md).
+>
+> **Every structural precondition of the hypothesis is true, and the opportunity is still empty.**
+> Young markets are quoted **16x wider** (half-spread 0.080 vs 0.005), **93.7%** have no two-sided
+> book at all (vs 16.6% mature), and the touch queue is **84x thinner** (75 vs 6,284). **85.2% of
+> flow sits in markets over thirty days old**, quoted at one tick behind a 6,284-deep queue.
+>
+> The confound was reported as registered: age and time-to-resolution correlate **+0.331**, and young
+> markets resolve in **25 hours** against 2,595 for mature ones. Polymarket's constant listing is
+> dominated by short-dated intraday contracts, wide because they are about to resolve and unpriced,
+> not because newness confers an edge.
+>
+> **The finding worth carrying: a mechanism is not an opportunity.** Nine prior classes failed on thin
+> economics or an informed counterparty. This one failed with every mechanism intact and no
+> counterparty at all.
+
+### Amendment 1 — the sampling frame, recorded 2026-09-14 before the measuring run
+
+**The first run WITHHELD at 173 young markets against the registered floor of 200**, having swept
+3,996 markets — close to the pagination ceiling. The cause is structural, not bad luck:
+`gatem.open_universe` sorts by **volume**, sweeping the head and tail of the volume distribution.
+A market listed an hour ago has had no time to accumulate volume, so a volume-ordered frame
+**systematically under-samples exactly the population this class is about**.
+
+The gamma API supports `order=createdAt`, verified before this amendment was written. The frame is
+therefore widened to the **union of the volume sweep and an age sweep taken from both ends**
+(newest-first and oldest-first), deduplicated.
+
+Three things this changes and one it does not:
+
+- **Both compared groups are now reachable by the same mechanism** — the age ordering — rather than
+  young markets being whatever the volume tail happened to contain.
+- **Capacity is measured over the swept union**, so numerator and denominator share a frame. The
+  union is a superset of every prior gate's universe but is still bounded by pagination: an
+  apparatus ceiling, never a venue total (AXIOMS G12, Pass 8).
+- The union is a **broader** sample than any prior gate used, so figures here are not directly
+  comparable to Gate M2's universe.
+- **No threshold, statistic, bucket boundary or decision rule is altered.** The floor that was
+  missed is a floor on *sample size*, and the registered response to missing it is to obtain more of
+  the right sample, not to lower the floor.
+
+Recorded before the measuring run rather than after seeing a result.
+
+### Why this is the last idea worth testing
+
+Every maker result in this repository is bounded by two constraints, and **both are properties of
+established markets**:
+
+- **One-tick pinning.** 77.4% of Polymarket flow and 73.4% of Kalshi flow sit in markets quoted at a
+  single tick, where an entrant cannot improve the quote (Gates M.0, K.0).
+- **Queue position.** An entrant joins the back of an existing queue (Gate 3.0).
+
+**A market listed ten minutes ago has neither.** There is no queue to be behind and no incumbent
+quote to fail to improve. Gate S showed incidentally that Polymarket lists constantly — all 1,597
+`sports_fees_v3` markets are under 2.1 months old. This is the only remaining hypothesis that attacks
+the binding constraint rather than varying something around it.
+
+### Apparatus facts, probed before this registration and declared
+
+| fact | consequence |
+|---|---|
+| **`gatem.days_since` floors at `max(1.0, ...)` days** | It **cannot be reused**. The entire youngest bucket would collapse into "1 day" and the gate would measure nothing. A separate unfloored age function is required |
+| `createdAt` is present and ISO-8601 (Gate S) | Sub-hour age is computable |
+| Polymarket publishes `spread` per market | The primary is computable across thousands of markets without a book fetch |
+| Book depth needs one fetch per market | Queue depth is a **bounded subsample**, reported as secondary |
+| **Every prior gate counted a market with no two-sided book as a refusal** (`no_order_book`, `no_two_sided_quote`) | For *this* hypothesis an empty book is the **signal, not a refusal**. Counting it as a rejection would discard exactly the cases the class is about (AXIOMS G5: an error and a measurement must never share a counter) |
+
+### The confound, named before it can be exploited
+
+**Age is confounded with time-to-resolution and market type.** A market created an hour ago is likely
+an intraday sports or crypto market; one created three months ago is likely long-dated political.
+"Young markets have wider spreads" may be "short-dated markets have wider spreads" wearing a
+different label.
+
+The gate therefore **reports the age/time-to-resolution relationship** alongside the result, so the
+confound is quantified rather than hidden. It is not controlled away — controlling it would be a
+search over specifications (A8, C7), and Gate 0b already established that this repository's
+stratified machinery loses power.
+
+### The hypothesis, stated so it can fail
+
+> **H:** Newly-listed markets are quoted materially wider — or not quoted at all — **and** carry
+> enough flow for a first maker to capture something at that spread.
+
+Both halves are required. A wide spread with no flow is not an opportunity.
+
+### Decision-rule specification — units, weighting, preconditions
+
+| element | value |
+|---|---|
+| **Units** | **hours** for age; **probability (= dollars per $1 contract)** for half-spread; **percent of flow** for capacity. Never ticks (Pass 37.1) |
+| **Weighting** | **by traded volume, not market count** (Pass 28.1) |
+| **Age buckets** | `<6h · 6-24h · 1-7d · 7-30d · >30d`, frozen here. **Moving a boundary after seeing a result converts the test into a search over cut points** (A8, C7) |
+| **Preconditions** | `active` (the only flag that predicts a real book, SCANB); longshot band on price **where a price exists**. A market with no book is **retained and counted**, not refused |
+| **Primary A — spread** | flow-weighted median half-spread in `<24h` vs `>30d`, with a bootstrap interval |
+| **Primary B — capacity** | share of total flow in markets under 24h old |
+| Secondary | share of markets with **no two-sided book**, by bucket; median queue depth at touch on a bounded subsample |
+| **Capacity floor** | **5% of total flow** in `<24h`. Below that the addressable market is under a twentieth of the venue and no spread compensates |
+| Minimum sample | 200 markets in the two youngest buckets combined, else **WITHHELD** |
+
+### Pre-committed expectation
+
+Young markets **will** be quoted wider and emptier — that is close to mechanical, and it is not the
+interesting half. The expectation is that they carry a **small share of flow**, because flow arrives
+after the spread has already tightened, and that the gate therefore **refutes on capacity** rather
+than on spread. Recorded before the numbers, and recorded as an expectation of refutation.
+
+### Decision rule — written before the numbers
+
+| outcome | action |
+|---|---|
+| `<24h` carries **< 5%** of flow | **REFUTED on capacity**, whatever the spread shows. A wide quote nobody trades against is not an opportunity. Class N closes |
+| `<24h` half-spread interval does **not** exceed the `>30d` interval, and the empty-book share is no higher | **REFUTED.** New listings are not structurally different and the two constraints bind from the first minute |
+| **Both** a materially wider spread (or emptier book) **and** ≥5% of flow | **NOT REFUTED on the cheap gate only.** Licenses a forward-tracking cohort study of new listings as a **new registration**. Licenses no profitability claim: adverse selection is unmeasured, and Gate M found 96.1% of a wider spread going to it |
+| Intervals straddle | **NO VERDICT** (`validity.py`) |
+| Fewer than 200 markets in the youngest two buckets | **WITHHELD** — apparatus, not evidence |
+
+### What this does not cover
+
+- **Adverse selection on new listings**, which may be *worse*: the first trades against a fresh
+  market are plausibly the best-informed ones. Unmeasured, and it cuts against the hypothesis.
+- **Inventory risk** on a market nobody else is quoting — being alone in the book means no exit.
+- **Whether a maker can actually be first.** This measures the state of young books, not the race to
+  reach them.
+- **One snapshot**, cross-sectional. Markets young *now* are a different sample from markets young
+  last week, and only surviving open markets are visible (Pass 34.6).
+- **F3 stands.** No broker integration, no live capital, no production executor, no quoting.
+
+---
+
 ## Gate 5 — Paper forward test
 
 > **STATUS: NOT RUN — blocked on Gate 4.**
