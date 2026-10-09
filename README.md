@@ -232,3 +232,15 @@ too: [`tests/test_readme_claims.py`](tests/test_readme_claims.py) checks every c
 tree, every headline figure against a results document, the "never traded" promise against every
 source file, and the pre-registration claim against git history — where it **fails partially, by
 design**, and the README says so above.
+
+## Support the work
+
+If this research saves you an unnecessary build or helps you evaluate evidence
+more carefully, consider [sponsoring my work](https://github.com/sponsors/ordokr).
+Your support helps sustain independent development, reproducible research tools,
+and clearer documentation.
+
+Sponsorship supports the work; it does not purchase trading advice, signals, or
+a particular research outcome. Thank you for helping me keep building.
+
+— Vail
