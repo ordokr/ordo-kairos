@@ -243,4 +243,4 @@ and clearer documentation.
 Sponsorship supports the work; it does not purchase trading advice, signals, or
 a particular research outcome. Thank you for helping me keep building.
 
-— Vail
+Tim V
